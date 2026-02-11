@@ -917,9 +917,16 @@ function search_api_ai_search_api_index_items_alter(array &$items, SearchApiInde
         unset($view[$entity_type][$entity_id]['#contextual_links']);
         unset($view[$entity_type][$entity_id]['links']);
 
-        // Also remove any contextual links module elements
+        // Also remove any contextual or admin wrapper elements added by modules.
+        // Use stricter matching so keys that merely contain the substring
+        // 'admin' (e.g., field_administrator_notes) are not removed.
         foreach (element_children($view[$entity_type][$entity_id]) as $key) {
-          if (strpos($key, 'contextual') !== FALSE || strpos($key, 'admin') !== FALSE) {
+          // Remove only keys that are actual contextual/admin wrappers, i.e.
+          // those that start with 'contextual' or 'admin' (optionally followed
+          // by an underscore) — e.g. 'contextual', 'contextual_1', 'admin',
+          // 'admin_actions'. This avoids accidental removal of fields with
+          // 'admin' contained elsewhere in the name.
+          if (preg_match('/^(?:contextual|admin)(?:$|_)/', $key)) {
             unset($view[$entity_type][$entity_id][$key]);
           }
         }
