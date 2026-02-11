@@ -944,11 +944,13 @@ function search_api_ai_search_api_index_items_alter(array &$items, SearchApiInde
               if (!empty($item_value['value'])) {
                 $cleaned_text .= "\n" . trim(strip_tags($item_value['value']));
               }
-              // Handle paragraphs if they are referenced in this field
-              elseif (!empty($item_value['value']) && $entity_type !== 'paragraphs_item' && !empty($item_value['item_id'])) {
-                 // If we have an item_id but no value, it might be a paragraph reference.
-                 // However, usually paragraphs are better handled via search_api_viewed.
-              }
+                // Handle paragraphs if they are referenced in this field
+                // Trigger when the value is empty but an item_id exists (paragraph reference).
+                elseif (empty($item_value['value']) && $entity_type !== 'paragraphs_item' && !empty($item_value['item_id'])) {
+                  // If we have an item_id but no value, it might be a paragraph reference.
+                  // Usually paragraphs are handled via search_api_viewed; try to handle
+                  // paragraph references when an item_id is present but value is empty.
+                }
             }
           }
         } elseif (is_string($field_value)) {

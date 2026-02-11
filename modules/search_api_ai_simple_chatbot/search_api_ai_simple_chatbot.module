@@ -593,18 +593,33 @@ function search_api_ai_simple_chatbot_form_submit($form, &$form_state) {
 
     // 8a) Remove any anchors that point to allowed hrefs from the main HTML
     if (!empty($used_anchors)) {
-      $allowed_hrefs = array_map(function($a) {
-        // Extract href from canonical anchor
-        if (preg_match('/href=["\']([^"\']+)["\']/', $a, $mm)) return rtrim($mm[1], '/');
-        return NULL;
-      }, $used_anchors);
-      $allowed_hrefs = array_filter($allowed_hrefs);
+      // Build a list of allowed href variants (full URL and path-only), normalized
+      $allowed_hrefs = [];
+      foreach ($used_anchors as $a) {
+        if (preg_match('/href=["\']([^"\']+)["\']/', $a, $mm)) {
+          $full = rtrim($mm[1], '/');
+          $allowed_hrefs[] = $full;
+          $path = parse_url($mm[1], PHP_URL_PATH);
+          if (!empty($path)) {
+            $allowed_hrefs[] = rtrim($path, '/');
+          }
+        }
+      }
+      $allowed_hrefs = array_values(array_unique(array_filter($allowed_hrefs)));
 
       // Remove only anchors matching these hrefs to avoid stripping unrelated links.
       $main_html = preg_replace_callback('/<a\\b[^>]*href=["\']([^"\']+)["\'][^>]*>.*?<\\/a>/i', function($m) use ($allowed_hrefs) {
-        $h = rtrim($m[1], '/');
-        if (in_array($h, $allowed_hrefs)) {
-          return '';
+        $href = $m[1];
+        $variants = [];
+        $variants[] = rtrim($href, '/');
+        $path = parse_url($href, PHP_URL_PATH);
+        if (!empty($path)) {
+          $variants[] = rtrim($path, '/');
+        }
+        foreach ($variants as $h) {
+          if (in_array($h, $allowed_hrefs, true)) {
+            return '';
+          }
         }
         return $m[0];
       }, $ai_response);
