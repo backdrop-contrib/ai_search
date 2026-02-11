@@ -445,6 +445,7 @@ function search_api_ai_simple_chatbot_form_submit($form, &$form_state) {
   $score_threshold   = (float) ($chat_config['score_threshold'] ?? 0.5);
   $context_snippets  = [];   // for LLM (plain text, fenced, with Source: URL)
   $context_anchors   = [];   // anchors we provided (for display + validation)
+  $allowed_source_hrefs = []; // map href => canonical anchor HTML
 
   foreach ($vector_results['matches'] ?? $vector_results as $match) {
     $score = isset($match['score']) ? $match['score'] : (isset($match['distance']) ? $match['distance'] : 0);
@@ -477,11 +478,20 @@ function search_api_ai_simple_chatbot_form_submit($form, &$form_state) {
 
 
         // Anchor (for display sources only), using relative URL.
-        $anchor = "<a href='{$url_rel}' class='kb-source'>{$title}</a>";
+        // Standardized anchor and allowed hrefs map. We map both relative and
+        // absolute hrefs to a canonical anchor HTML (relative URL, kb-source
+        // class). Later we will allow the model to copy any anchor that points
+        // to one of these hrefs (matching by href), which is more robust than
+        // requiring an exact HTML string match.
+        $standard_anchor = "<a href='" . check_plain($url_rel) . "' class='kb-source'>" . check_plain($title) . "</a>";
+        $allowed_source_hrefs[ $url_rel ] = $standard_anchor;
+        $allowed_source_hrefs[ $url_abs ] = $standard_anchor;
+
 
         // Fenced context block for the model.
         $context_snippets[] = "BEGIN_CONTEXT_DOC title={$title}\n{$snippet}\nSource: {$url_abs}\nEND_CONTEXT_DOC";
-        $context_anchors[]  = $anchor;
+        // Keep a list of canonical anchors we supplied (for display ordering).
+        $context_anchors[]  = $standard_anchor;
       }
     }
   }
@@ -558,21 +568,54 @@ function search_api_ai_simple_chatbot_form_submit($form, &$form_state) {
       }
     }
 
-    // 8) Extract any kb-source anchors the model copied, then strip them for streaming text
-    preg_match_all('/<a\\b[^>]*class=["\']kb-source["\'][^>]*>.*?<\\/a>/i', $ai_response, $m_used);
-    $used_anchors = !empty($m_used[0]) ? array_unique($m_used[0]) : [];
-    // Only allow anchors that we actually provided in this turn.
-    if (!empty($used_anchors) && !empty($context_anchors)) {
-      $allowed = array_fill_keys($context_anchors, TRUE);
-      $used_anchors = array_values(array_filter($used_anchors, function ($a) use ($allowed) { return isset($allowed[$a]); }));
+    // 8) Extract any anchors the model copied and allow matches by href.
+    // We accept anchors even if the model changed attributes or omitted the
+    // 'kb-source' class, as long as the href points to an allowed source.
+    $used_anchors = [];
+    preg_match_all('/<a\\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)<\\/a>/i', $ai_response, $m_anchor_matches);
+    if (!empty($m_anchor_matches[1])) {
+      foreach ($m_anchor_matches[1] as $idx => $href) {
+        $text_inner = $m_anchor_matches[2][$idx] ?? '';
+        // Normalize hrefs: strip trailing slash
+        $normalized = rtrim($href, '/');
+        // Try to match against allowed hrefs using exact match on normalized forms
+        foreach ($allowed_source_hrefs as $allowed_href => $canonical_anchor) {
+          if (rtrim($allowed_href, '/') === $normalized) {
+            $used_anchors[] = $canonical_anchor;
+            break;
+          }
+        }
+      }
     }
 
-    // 8a) Remove kb-source anchors from the main body
-    $main_html = preg_replace('/<a\\b[^>]*class=["\']kb-source["\'][^>]*>.*?<\\/a>/i', '', $ai_response);
+    // Deduplicate while keeping order
+    $used_anchors = array_values(array_unique($used_anchors));
+
+    // 8a) Remove any anchors that point to allowed hrefs from the main HTML
+    if (!empty($used_anchors)) {
+      $allowed_hrefs = array_map(function($a) {
+        // Extract href from canonical anchor
+        if (preg_match('/href=["\']([^"\']+)["\']/', $a, $mm)) return rtrim($mm[1], '/');
+        return NULL;
+      }, $used_anchors);
+      $allowed_hrefs = array_filter($allowed_hrefs);
+
+      // Remove only anchors matching these hrefs to avoid stripping unrelated links.
+      $main_html = preg_replace_callback('/<a\\b[^>]*href=["\']([^"\']+)["\'][^>]*>.*?<\\/a>/i', function($m) use ($allowed_hrefs) {
+        $h = rtrim($m[1], '/');
+        if (in_array($h, $allowed_hrefs)) {
+          return '';
+        }
+        return $m[0];
+      }, $ai_response);
+    }
+    else {
+      $main_html = $ai_response;
+    }
 
     // 8b) For all other anchors, if absolute (http/https), replace with the href so it remains as visible text
     $main_html = preg_replace_callback(
-      '/<a\\b[^>]*href=["\'](https?:\/\/[^"\']+)["\'][^>]*>.*?<\\/a>/i',
+      '/<a\\b[^>]*href=["\'](https?:\\/\\/[^"\']+)["\'][^>]*>.*?<\\/a>/i',
       function ($m) { return $m[1]; },
       $main_html
     );
@@ -580,7 +623,7 @@ function search_api_ai_simple_chatbot_form_submit($form, &$form_state) {
     // 8c) Now strip any remaining tags and decode entities -> yields stream-safe text that still contains absolute URLs
     $main_text = trim(html_entity_decode(strip_tags($main_html), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 
-    // Build sources block (unchanged)
+    // Build sources block using canonical anchors for any matched used anchors.
     $sources_html = '';
     if (!empty($used_anchors)) {
       foreach ($used_anchors as $anchor) {

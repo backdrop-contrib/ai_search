@@ -146,7 +146,7 @@ class SearchApiAiMilvusVectorClient extends SearchApiAiVectorClientBase {
       0,
       $database
     );
-    if (!isset($result['data']) || !is_array($result['data'])) {
+    if (empty($result) || !isset($result['data']) || !is_array($result['data'])) {
       return [];
     }
 

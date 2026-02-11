@@ -890,18 +890,19 @@ function search_api_ai_search_api_index_items_alter(array &$items, SearchApiInde
       $relative_url = $alias;
       $absolute_url = url($internal_path, ['absolute' => TRUE]);
     }
-    $context_metadata['search_api_url'] = $relative_url;
     $context_metadata['url'] = $absolute_url;
+    $context_metadata['search_api_url'] = $relative_url;
 
     $cleaned_text = '';
+    if (!empty($title)) {
+      $cleaned_text = $title . "\n\n";
+    }
+
     if ($main_content_field == 'search_api_viewed') {
       // Render entity and remove admin markup (Edit/Delete, contextual links, etc.)
       // to prevent them from being stored in vector embeddings.
       // Use the entity controller's view() which returns a render array
       // keyed by [$entity_type][$entity_id] (the structure expected below).
-      // Previous code passed $entity_type (string) to entity_view(), causing
-      // a TypeError. Prefer controller->view() and fall back to
-      // entity_view($entity, $view_mode) wrapped into the same shape.
       $controller = entity_get_controller($entity_type);
       if (is_object($controller) && method_exists($controller, 'view')) {
         $view = $controller->view([$entity_id => $entity], $view_mode);
@@ -918,31 +919,44 @@ function search_api_ai_search_api_index_items_alter(array &$items, SearchApiInde
 
         // Also remove any contextual links module elements
         foreach (element_children($view[$entity_type][$entity_id]) as $key) {
-          if (strpos($key, 'contextual') !== FALSE) {
+          if (strpos($key, 'contextual') !== FALSE || strpos($key, 'admin') !== FALSE) {
             unset($view[$entity_type][$entity_id][$key]);
           }
         }
       }
 
       $rendered = backdrop_render($view);
-      $cleaned_text = trim(strip_tags($rendered));
+
+      // Improve HTML-to-text conversion by adding spaces between block elements
+      // to prevent words from merging (e.g., "</div><div>" -> " ").
+      $block_tags = 'address|article|aside|blockquote|canvas|dd|div|dl|dt|fieldset|figcaption|figure|footer|form|h1|h2|h3|h4|h5|h6|header|hr|li|main|nav|noscript|ol|p|pre|section|table|tfoot|ul|video';
+      $rendered = preg_replace('/<(' . $block_tags . ')[^>]*>/i', ' ', $rendered);
+
+      $cleaned_text .= trim(strip_tags($rendered));
     }
     else {
       if (!empty($entity->{$main_content_field})) {
         $field_value = $entity->{$main_content_field};
         if (is_array($field_value)) {
           foreach ($field_value as $langcode => $items2) {
+            if (!is_array($items2)) continue;
             foreach ($items2 as $item_value) {
               if (!empty($item_value['value'])) {
                 $cleaned_text .= "\n" . trim(strip_tags($item_value['value']));
               }
+              // Handle paragraphs if they are referenced in this field
+              elseif (!empty($item_value['value']) && $entity_type !== 'paragraphs_item' && !empty($item_value['item_id'])) {
+                 // If we have an item_id but no value, it might be a paragraph reference.
+                 // However, usually paragraphs are better handled via search_api_viewed.
+              }
             }
           }
         } elseif (is_string($field_value)) {
-          $cleaned_text = trim(strip_tags($field_value));
+          $cleaned_text .= "\n" . trim(strip_tags($field_value));
         }
       }
     }
+    $cleaned_text = trim($cleaned_text);
     if (empty($cleaned_text)) {
       watchdog('search_api_ai', "⚠️ No main content to embed for $entity_type/$entity_id", [], WATCHDOG_WARNING);
       continue;

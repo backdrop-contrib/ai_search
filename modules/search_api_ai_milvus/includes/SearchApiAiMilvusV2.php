@@ -122,7 +122,8 @@ class SearchApiAiMilvusV2 {
     if ($database_name && !$this->isZilliz()) {
       $params['dbName'] = $database_name;
     }
-    return json_decode($this->makeRequest('vectordb/collections/drop', [], 'POST', $params), TRUE);
+    $decoded = json_decode($this->makeRequest('vectordb/collections/drop', [], 'POST', $params), TRUE);
+    return is_array($decoded) ? $decoded : [];
   }
 
   /**
@@ -137,7 +138,8 @@ class SearchApiAiMilvusV2 {
   public function listCollections(string $database_name = ''): array {
     // Has to be an object, when empty ¯\_(ツ)_/¯.
     $data = $database_name && !$this->isZilliz() ? ['dbName' => $database_name] : new \stdClass();
-    return json_decode($this->makeRequest('vectordb/collections/list', [], 'POST', $data), TRUE);
+    $decoded = json_decode($this->makeRequest('vectordb/collections/list', [], 'POST', $data), TRUE);
+    return is_array($decoded) ? $decoded : [];
   }
 
   /**
@@ -161,7 +163,8 @@ class SearchApiAiMilvusV2 {
     if ($database_name && !$this->isZilliz()) {
       $data['dbName'] = $database_name;
     }
-    return json_decode($this->makeRequest('vectordb/collections/describe', [], 'POST', $data), TRUE);
+    $decoded = json_decode($this->makeRequest('vectordb/collections/describe', [], 'POST', $data), TRUE);
+    return is_array($decoded) ? $decoded : [];
   }
 
   /**
@@ -187,7 +190,8 @@ class SearchApiAiMilvusV2 {
     }
 
     $response = $this->makeRequest('vectordb/entities/insert', [], 'POST', $params);
-    return json_decode($response, TRUE);
+    $decoded = json_decode($response, TRUE);
+    return is_array($decoded) ? $decoded : [];
   }
 
   /**
@@ -211,7 +215,8 @@ class SearchApiAiMilvusV2 {
     if ($database_name && !$this->isZilliz()) {
       $params['dbName'] = $database_name;
     }
-    return json_decode($this->makeRequest('vectordb/entities/delete', [], 'POST', $params), TRUE);
+    $decoded = json_decode($this->makeRequest('vectordb/entities/delete', [], 'POST', $params), TRUE);
+    return is_array($decoded) ? $decoded : [];
   }
 
   /**
@@ -247,7 +252,8 @@ class SearchApiAiMilvusV2 {
     }
 
     $response = $this->makeRequest('vectordb/entities/query', [], 'POST', $params);
-    return json_decode($response);
+    $decoded = json_decode($response, TRUE);
+    return is_array($decoded) ? $decoded : [];
   }
 
   /**
@@ -289,7 +295,7 @@ class SearchApiAiMilvusV2 {
     $response = $this->makeRequest('vectordb/entities/search', [], 'POST', $params);
     $decodedResponse = json_decode($response, true);
     //dpm($decodedResponse);
-    return $decodedResponse;
+    return is_array($decodedResponse) ? $decodedResponse : [];
   }
 
   /**
@@ -363,7 +369,8 @@ class SearchApiAiMilvusV2 {
     if ($database_name && !$this->isZilliz()) {
       $params['dbName'] = $database_name;
     }
-    return json_decode($this->makeRequest('vectordb/entities/delete', [], 'POST', $params), TRUE);
+    $decoded = json_decode($this->makeRequest('vectordb/entities/delete', [], 'POST', $params), TRUE);
+    return is_array($decoded) ? $decoded : [];
   }
 
 
