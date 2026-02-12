@@ -572,12 +572,13 @@ function search_api_ai_simple_chatbot_form_submit($form, &$form_state) {
     // We accept anchors even if the model changed attributes or omitted the
     // 'kb-source' class, as long as the href points to an allowed source.
     $used_anchors = [];
-    preg_match_all('/<a\\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)<\\/a>/i', $ai_response, $m_anchor_matches);
+    // Use a non-capturing group for inner text since we don't need it here.
+    preg_match_all('/<a\\b[^>]*href=["\']([^"\']+)["\'][^>]*>(?:.*?)<\\/a>/i', $ai_response, $m_anchor_matches);
     if (!empty($m_anchor_matches[1])) {
       foreach ($m_anchor_matches[1] as $idx => $href) {
-        $text_inner = $m_anchor_matches[2][$idx] ?? '';
-        // Normalize hrefs: strip trailing slash
-        $normalized = rtrim($href, '/');
+        // Normalize hrefs: decode URL-encoded paths and strip trailing slash
+        $decoded = rawurldecode($href);
+        $normalized = rtrim($decoded, '/');
         // Try to match against allowed hrefs using exact match on normalized forms
         foreach ($allowed_source_hrefs as $allowed_href => $canonical_anchor) {
           if (rtrim($allowed_href, '/') === $normalized) {

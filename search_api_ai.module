@@ -936,8 +936,10 @@ function search_api_ai_search_api_index_items_alter(array &$items, SearchApiInde
 
       // Improve HTML-to-text conversion by adding spaces between block elements
       // to prevent words from merging (e.g., "</div><div>" -> " ").
+      // Match both opening and closing block tags so spaces are inserted
+      // around start and end of block elements before stripping tags.
       $block_tags = 'address|article|aside|blockquote|canvas|dd|div|dl|dt|fieldset|figcaption|figure|footer|form|h1|h2|h3|h4|h5|h6|header|hr|li|main|nav|noscript|ol|p|pre|section|table|tfoot|ul|video';
-      $rendered = preg_replace('/<(' . $block_tags . ')[^>]*>/i', ' ', $rendered);
+      $rendered = preg_replace('/<\/?(' . $block_tags . ')[^>]*>/i', ' ', $rendered);
 
       $cleaned_text .= trim(strip_tags($rendered));
     }
@@ -954,9 +956,12 @@ function search_api_ai_search_api_index_items_alter(array &$items, SearchApiInde
                 // Handle paragraphs if they are referenced in this field
                 // Trigger when the value is empty but an item_id exists (paragraph reference).
                 elseif (empty($item_value['value']) && $entity_type !== 'paragraphs_item' && !empty($item_value['item_id'])) {
-                  // If we have an item_id but no value, it might be a paragraph reference.
-                  // Usually paragraphs are handled via search_api_viewed; try to handle
-                  // paragraph references when an item_id is present but value is empty.
+                  // TODO: Resolve paragraph reference here when `item_id` exists
+                  // but `value` is empty. The resolution should load the referenced
+                  // paragraph entity and extract its main content (or delegate to
+                  // the existing paragraph-handling pipeline). Intentionally left
+                  // as a TODO to avoid duplicating logic; implement in the place
+                  // where paragraph references are actually resolved.
                 }
             }
           }

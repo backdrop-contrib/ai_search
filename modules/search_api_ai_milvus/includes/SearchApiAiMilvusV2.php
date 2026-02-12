@@ -101,7 +101,10 @@ class SearchApiAiMilvusV2 {
     // Optionally:
     $options['schema']['autoID'] = TRUE;
     $options['schema']['enableDynamicField'] = FALSE;
-    return json_decode($this->makeRequest('vectordb/collections/create', [], 'POST', $options), TRUE);
+
+    $response = $this->makeRequest('vectordb/collections/create', [], 'POST', $options);
+    $decoded = json_decode($response, TRUE);
+    return is_array($decoded) ? $decoded : [];
   }
 
   /**
@@ -122,8 +125,20 @@ class SearchApiAiMilvusV2 {
     if ($database_name && !$this->isZilliz()) {
       $params['dbName'] = $database_name;
     }
-    $decoded = json_decode($this->makeRequest('vectordb/collections/drop', [], 'POST', $params), TRUE);
-    return is_array($decoded) ? $decoded : [];
+    $response = $this->makeRequest('vectordb/collections/drop', [], 'POST', $params);
+    $decoded = json_decode($response, TRUE);
+    if (!is_array($decoded)) {
+      // Log the raw response and the JSON error so callers/operators can
+      // distinguish between an empty result and an API/parse failure.
+      $raw_preview = is_string($response) ? substr($response, 0, 2000) : '';
+      watchdog('search_api_ai_milvus', 'vectordb collections drop returned invalid JSON: @err; response preview: @resp', ['@err' => json_last_error_msg(), '@resp' => $raw_preview], WATCHDOG_ERROR);
+      return [
+        'error' => 'invalid_json',
+        'message' => json_last_error_msg(),
+        'raw' => is_string($response) ? $response : '',
+      ];
+    }
+    return $decoded;
   }
 
   /**
@@ -208,9 +223,30 @@ class SearchApiAiMilvusV2 {
    *   The response.
    */
   public function deleteFromCollection(string $collection_name, array $ids, string $database_name = 'default'): array {
+    // Validate and sanitize IDs before building the filter to avoid
+    // interpolating unexpected values into the request.
+    if (empty($ids)) {
+      return ['error' => 'No ids provided'];
+    }
+    $sanitized = [];
+    $invalid = [];
+    foreach ($ids as $id) {
+      // Accept integers or numeric strings that represent integers.
+      if (is_int($id) || (is_string($id) && ctype_digit($id))) {
+        $sanitized[] = (int) $id;
+      }
+      // Reject non-integer numeric values to avoid unintended casting.
+      else {
+        $invalid[] = $id;
+      }
+    }
+    if (!empty($invalid)) {
+      return ['error' => 'Invalid id(s) provided', 'invalid_ids' => $invalid];
+    }
+
     $params = [
       'collectionName' => $collection_name,
-      'filter' => 'id in [' . implode(',', $ids) . ']',
+      'filter' => 'id in [' . implode(',', $sanitized) . ']',
     ];
     if ($database_name && !$this->isZilliz()) {
       $params['dbName'] = $database_name;
@@ -360,7 +396,19 @@ class SearchApiAiMilvusV2 {
     return preg_match('(zillizcloud.com|cloud.zilliz.com)', $this->baseUrl) === 1;
   }
 
-  // SearchApiAiMilvusV2.php
+  /**
+   * Delete entities by expression.
+   *
+   * @param string $collection_name
+   *   The collection.
+   * @param string $expr
+   *   The expression to filter which entities to delete.
+   * @param string $database_name
+   *   The database name.
+   *
+   * @return array
+   *   The response.
+   */
   public function deleteByExpr(string $collection_name, string $expr, string $database_name = 'default'): array {
     $params = [
       'collectionName' => $collection_name,
