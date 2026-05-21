@@ -1,0 +1,6 @@
+name = AI Search Simple Chatbot
+description = Simple chatbot interface powered by AI search.
+backdrop = 1.x
+type = module
+package = AI
+dependencies[] = ai_search

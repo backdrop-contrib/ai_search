@@ -1,0 +1,7 @@
+name = AI Search Explorer
+description = UI explorer for vector search queries and results.
+backdrop = 1.x
+type = module
+package = AI
+dependencies[] = ai_search
+configure = admin/config/ai/explorer/search

@@ -1,0 +1,571 @@
+<?php
+
+require_once backdrop_get_path('module', 'ai_search') . '/includes/AiSearchBackend.inc';
+
+/**
+ * Implements hook_menu().
+ */
+function ai_search_explorer_menu() {
+  $items = [];
+
+  $items['admin/config/ai/ai-explorer/search'] = [
+    'title' => 'AI Search Explorer',
+    'description' => 'Contains a form where you can run chat queries using AI search as an embedding backend.',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => ['ai_search_explorer_search_form'],
+    'access arguments' => ['administer site configuration'],
+  ];
+
+  return $items;
+}
+/**
+ * Build the Search API AI Explorer form.
+ */
+function ai_search_explorer_search_form($form, &$form_state) {
+  $form['index'] = [
+    '#type' => 'select',
+    '#title' => t('Index'),
+    '#description' => t('Select the index for the embeddings store.'),
+    '#options' => [],
+  ];
+
+  // Load all indexes and servers at once.
+  $indexes = entity_load_multiple('search_api_index');
+  $servers = entity_load_multiple('search_api_server');
+  foreach ($indexes as $index) {
+    if (empty($index->server)) {
+      continue;
+    }
+    $server = NULL;
+    foreach ($servers as $s) {
+      if ($s->machine_name == $index->server) {
+        $server = $s;
+        break;
+      }
+    }
+    if (ai_search_index_supports_rag($index, $server)) {
+      $form['index']['#options'][$index->machine_name] = $index->name;
+    }
+  }
+  if (empty($form['index']['#options'])) {
+    backdrop_set_message(t('No valid RAG search indexes found.'), 'warning');
+    $form['index']['#options'] = ['' => t('- No indexes available -')];
+  }
+
+  // NOTE: Chat model fields removed - search explorer now displays raw results with scores only.
+  // The following sections are no longer used but retained for reference if chatbot mode is re-enabled.
+  /*
+  // Add Model dropdown, Chat Temperature, and Max Tokens fields directly after Index
+  $cache_id = 'ai_search_explorer_chat_models';
+  $cache = cache_get($cache_id);
+  if ($cache && !empty($cache->data)) {
+    $chat_models = $cache->data;
+  }
+  else {
+    // Prefer the newer helper when available. Otherwise attempt to discover
+    // models by instantiating a legacy client and normalizing results.
+    if (function_exists('ai_get_all_chat_models')) {
+      $chat_models = ai_get_all_chat_models();
+    }
+    else {
+      $chat_models = [];
+      try {
+        // Try to use our compatibility helper to get a client and then list models
+        $stripped = NULL;
+        $client = ai_get_api_for_model('ai', $stripped);
+        if ($client) {
+          $models = [];
+          if (method_exists($client, 'filterModels')) {
+            $flat = $client->filterModels(['gpt']);
+            if (!empty($flat) && is_array($flat)) {
+              $models = $flat;
+            }
+          }
+          elseif (method_exists($client, 'listModels')) {
+            $resp = $client->listModels();
+            if (is_object($resp) && isset($resp->data) && is_array($resp->data)) {
+              foreach ($resp->data as $m) {
+                $id = is_object($m) && isset($m->id) ? $m->id : (is_array($m) && isset($m['id']) ? $m['id'] : NULL);
+                if ($id) $models[$id] = $id;
+              }
+            }
+            elseif (is_array($resp)) {
+              foreach ($resp as $k => $v) {
+                if (is_string($k) && is_string($v)) $models[$k] = $v;
+              }
+            }
+          }
+
+          if (!empty($models)) {
+            $chat_models = ['ai' => $models];
+          }
+        }
+      }
+      catch (\Exception $e) {
+        watchdog('ai_search', 'Failed to fetch models from legacy AIApi: @msg', ['@msg' => $e->getMessage()], WATCHDOG_WARNING);
+      }
+    }
+    cache_set($cache_id, $chat_models, 'cache', REQUEST_TIME + 3600);
+  }
+
+  // Create flat array for default value checking
+  $flat_chat_options = [];
+  if (!empty($chat_models) && is_array($chat_models)) {
+    foreach ($chat_models as $group_label => $group_items) {
+      if (is_array($group_items)) {
+        foreach ($group_items as $k => $v) {
+          $flat_chat_options[$k] = $v;
+        }
+      }
+      else {
+        $flat_chat_options[$group_label] = $group_items;
+      }
+    }
+  }
+
+  // Determine default chat model
+  $default_chat_model = 'ai/gpt-3.5-turbo';
+  if (!empty($flat_chat_options)) {
+    if (!isset($flat_chat_options[$default_chat_model])) {
+      // Try without prefix
+      if (isset($flat_chat_options['gpt-3.5-turbo'])) {
+        $default_chat_model = 'gpt-3.5-turbo';
+      }
+      else {
+        // Just use first available
+        reset($flat_chat_options);
+        $default_chat_model = key($flat_chat_options);
+      }
+    }
+  }
+
+  $form['model'] = [
+    '#type' => 'select',
+    '#title' => t('Chat Model'),
+    '#options' => $chat_models,  // Use grouped array for optgroups
+    '#default_value' => $default_chat_model,
+    '#description' => t('Select a chat model from any enabled AI provider. Available models and pricing vary by provider.'),
+  ];
+
+  // Auto-detect embedding model from the selected index (no dropdown needed)
+  // The embedding model will be determined in the submit handler based on index configuration
+  $form['embedding_model_info'] = [
+    '#type' => 'markup',
+    '#markup' => '<div class="messages info">' . t('The embedding model will be automatically detected from the selected index configuration.') . '</div>',
+    '#weight' => 104,
+  ];
+
+  $form['chat_temperature'] = [
+    '#type' => 'number',
+    '#title' => t('Chat Temperature'),
+    '#min' => 0,
+    '#max' => 2,
+    '#step' => .1,
+    '#default_value' => isset($form_state['values']['chat_temperature']) ?
+      $form_state['values']['chat_temperature'] : 0.5,
+    '#description' => t('Controls randomness. Typical values: 0.0 (deterministic] to 1.0 (creative].'),
+  ];
+  $form['chat_max_tokens'] = [
+    '#type' => 'number',
+    '#title' => t('Max Tokens'),
+    '#min' => 128,
+    '#step' => 1,
+    '#default_value' => isset($form_state['values']['chat_max_tokens']) ? $form_state['values']['chat_max_tokens'] : 1024,
+    '#description' => t('Maximum number of tokens in the response.'),
+  ];
+  */
+
+  // Add Score Threshold field
+  $form['score_threshold'] = [
+    '#type' => 'number',
+    '#title' => t('Score Threshold'),
+    '#min' => 0,
+    '#max' => 1,
+    '#step' => 0.01,
+    '#default_value' => isset($form_state['values']['score_threshold']) ? $form_state['values']['score_threshold'] : 0.5,
+    '#description' => t('Minimum score for a result to be considered relevant (0.0 to 1.0].'),
+  ];
+
+  // Load previously stored search results.
+  $results = isset($form_state['storage']['results']) ? $form_state['storage']['results'] : [];
+  $query = isset($form_state['storage']['query']) ? $form_state['storage']['query'] : '';
+
+  $results_markup = '';
+  if (!empty($results)) {
+    $results_markup = '<div class="ai-search-results">';
+    $results_markup .= '<h3>Search Results for: <em>' . check_plain($query) . '</em></h3>';
+    $results_markup .= '<ol>';
+    foreach ($results as $result) {
+      $results_markup .= '<li>';
+      $results_markup .= '<div class="result-score">[Score: ' . check_plain($result['score']) . ']</div>';
+      $results_markup .= '<div class="result-title"><a href="' . check_url($result['url']) . '" target="_blank">' . check_plain($result['title']) . '</a></div>';
+      $results_markup .= '<div class="result-snippet">' . filter_xss($result['snippet'], ['strong', 'em', 'p']) . '</div>';
+      $results_markup .= '</li>';
+    }
+    $results_markup .= '</ol>';
+    $results_markup .= '</div>';
+  }
+
+  // Debug messages: system prompt + RAG context.
+  $debug_markup = '';
+  $debug_messages = isset($form_state['storage']['debug_messages']) ? $form_state['storage']['debug_messages'] : [];
+  if (!empty($debug_messages)) {
+    $debug_markup = '<div class="ai-search-debug"><h3>' . t('Debug: Messages sent to LLM') . '</h3>';
+    foreach ($debug_messages as $msg) {
+      $role = check_plain($msg['role']);
+      $content = check_plain($msg['content']);
+      $debug_markup .= '<div class="debug-message debug-message--' . $role . '">';
+      $debug_markup .= '<strong>' . backdrop_ucfirst($role) . ':</strong>';
+      $debug_markup .= '<pre>' . $content . '</pre>';
+      $debug_markup .= '</div>';
+    }
+    $debug_markup .= '</div>';
+  }
+
+  $form['results'] = [
+    '#type' => 'markup',
+    '#markup' => $debug_markup . $results_markup,
+    '#weight' => 999,
+  ];
+
+
+
+  // **User Input Field**
+  $form['query'] = [
+    '#type' => 'textarea',
+    '#title' => t('Ask ChatGPT a question'),
+    '#required' => TRUE,
+  ];
+
+  // **Advanced Options**
+  $form['options'] = [
+    '#type' => 'fieldset',
+    '#title' => t('Advanced options'),
+  ];
+  $form['options']['system_messages'] = [
+    '#type' => 'checkbox',
+    '#title' => t('Show debug messages (system + user context]'),
+    '#description' => t('When enabled, displays the full system prompts and RAG context sent to the LLM. Useful for debugging but can be very verbose.'),
+  ];
+  $form['actions'] = ['#type' => 'actions'];
+  $form['actions']['submit'] = [
+    '#type' => 'submit',
+    '#value' => t('Send'),
+  ];
+
+  return $form;
+}
+
+/**
+ * Extract matches and normalized metadata from any backend.
+ */
+function ai_search_extract_contextual_sources($server, $index, $vector_results, $score_threshold) {
+  $sources = [];
+  $matches = ai_search_backend_result_matches($server, $vector_results, $index);
+
+  foreach ($matches as $match) {
+    $score = ai_search_match_score($match);
+    if ($score === null || $score < $score_threshold) {
+      continue;
+    }
+
+    $resolved = ai_search_match_entity($match);
+    if (!$resolved) {
+      continue;
+    }
+
+    $metadata = $resolved['metadata'];
+    $datasource_id = $resolved['entity_type'];
+    $item_id = $resolved['entity_id'];
+    $entity = $resolved['entity'];
+
+    if (!$entity) {
+      $sources[] = [
+        'error' => t('Could not load entity: @datasource/@item_id', [
+          '@datasource' => $datasource_id,
+          '@item_id' => $item_id,
+        ]),
+      ];
+      continue;
+    }
+
+    $title = check_plain(ai_search_match_title($datasource_id, $entity, $metadata));
+    $url = ai_search_match_relative_url($datasource_id, $entity, $metadata);
+    $snippet = check_plain(ai_search_match_snippet($match, $metadata));
+
+    // Paragraph parent lookup (optional)
+    if ($datasource_id === 'paragraphs_item') {
+      $query = db_select('field_data_field_paragraphs', 'f')
+        ->fields('f', ['entity_id'])
+        ->condition('f.field_paragraphs_value', $item_id)
+        ->range(0, 1);
+      $nid = $query->execute()->fetchField();
+      if ($nid) {
+        $node = node_load($nid);
+        if ($node) {
+          $title = check_plain($node->title);
+          $url = url($node->uri()['path']);
+        }
+        else {
+          $sources[] = [
+            'error' => t('Node @nid could not be loaded for paragraph ID @pid.', [
+              '@nid' => $nid,
+              '@pid' => $item_id,
+            ]),
+          ];
+          continue;
+        }
+      }
+      else {
+        $sources[] = [
+          'error' => t('Could not find parent node for paragraph ID @id.', ['@id' => $item_id]),
+        ];
+        continue;
+      }
+    }
+    elseif ($datasource_id === 'taxonomy_term') {
+      $title = check_plain($entity->name);
+      $url = url($entity->uri()['path']);
+    }
+
+    $sources[] = [
+      'datasource_id' => $datasource_id,
+      'item_id' => $item_id,
+      'entity' => $entity,
+      'title' => $title,
+      'url' => $url,
+      'snippet' => $snippet,
+      'score' => $score,
+    ];
+  }
+  return $sources;
+}
+
+
+function ai_search_explorer_search_form_submit($form, &$form_state) {
+  $index_id = $form_state['values']['index'];
+  $query_text = trim($form_state['values']['query']);
+  // Load the selected index.
+  $indexes = entity_load_multiple('search_api_index');
+  $index = NULL;
+  foreach ($indexes as $i) {
+    if ($i->machine_name == $index_id) {
+      $index = $i;
+      break;
+    }
+  }
+  if (!$index || !is_object($index)) {
+    backdrop_set_message(t('Invalid index selected.'), 'error');
+    return;
+  }
+
+  // Load the associated server.
+  $servers = entity_load_multiple('search_api_server');
+  $server = NULL;
+  foreach ($servers as $s) {
+    if ($s->machine_name == $index->server) {
+      $server = $s;
+      break;
+    }
+  }
+  if (!$server) {
+    backdrop_set_message(t('The selected index does not have a valid server.'), 'error');
+    return;
+  }
+
+  // Get embedding model from server options (canonical), fallback to form value.
+  $embedding_model = !empty($server->options['embeddings_engine'])
+    ? $server->options['embeddings_engine']
+    : (!empty($form_state['values']['embedding_model']) ? $form_state['values']['embedding_model'] : 'text-embedding-3-small');
+
+  // Determine dimension
+  $dimension = 1536;
+  if (function_exists('ai_get_embedding_dimension')) {
+    // If the model is prefixed with a provider, extract it
+    $provider_id = 'ai';
+    $model_id = $embedding_model;
+    if (strpos($embedding_model, '/') !== FALSE) {
+      list($provider_id, $model_id) = explode('/', $embedding_model, 2);
+    }
+    $dimension = ai_get_embedding_dimension($model_id, $provider_id);
+  }
+
+  // **Generate Embeddings using the embeddings engine**
+  try {
+    // Create configuration for the embedding engine
+    $embedding_configuration = [
+      'embeddings_engine' => $embedding_model,
+      'embeddings_engine_configuration' => ['dimension' => $dimension],
+    ];
+
+    // Load the embedding engine
+    $embedding_engine = ai_search_load_embeddings_engine($embedding_configuration);
+
+    if (!$embedding_engine) {
+      throw new Exception('Failed to load embedding engine.');
+    }
+
+    // Log the explorer query to ai_log if possible
+    // Try to log via the provider-aware client if possible.
+    $stripped = NULL;
+    $api = ai_get_api_for_model($embedding_model, $stripped);
+    if ($api && method_exists($api, 'recordLog')) {
+      $api->recordLog('explorer_embedding', $embedding_model, ['query' => $query_text], '', TRUE, 0);
+    }
+
+    // Create the embedding for the user query
+    $embedding_vector = $embedding_engine->generateEmbeddings($query_text);
+
+    if (!$embedding_vector) {
+      throw new Exception('Error retrieving query embedding.');
+    }
+  }
+  catch (\Exception $e) {
+    backdrop_set_message(t('Error generating embeddings: @error', ['@error' => $e->getMessage()]), 'error');
+    return;
+  }
+  // --- Determine backend and perform vector search ---
+  $vector_results = [];
+  $backend_class = $server->class;
+  if (!ai_search_index_supports_rag($index, $server)) {
+    backdrop_set_message(t('This backend is not supported for vector search.'), 'error');
+    return;
+  }
+  try {
+    $vector_results = ai_search_query_backend($server, $index, $embedding_vector, $dimension, 8);
+  }
+  catch (\Exception $e) {
+    backdrop_set_message(t('Error querying backend: @error', ['@error' => $e->getMessage()]), 'error');
+    return;
+  }
+  if (empty(ai_search_backend_result_matches($server, $vector_results, $index))) {
+    backdrop_set_message(t('No relevant results found.'), 'warning');
+    return;
+  }
+
+  // --- Process Results and Add to Messages ---
+  $score_threshold = isset($form_state['values']['score_threshold']) ? floatval($form_state['values']['score_threshold']) : 0.5;
+  $sources = ai_search_extract_contextual_sources($server, $index, $vector_results, $score_threshold);
+
+  $source_citations = [];  // For UI display after the answer
+  $content_chunks = [];    // Clean text for LLM (no URLs/HTML)
+
+  foreach ($sources as $idx => $src) {
+    if (!empty($src['error'])) {
+      backdrop_set_message($src['error'], 'warning');
+      continue;
+    }
+
+    // Build citation for UI (with clickable link)
+    $source_citations[] = [
+      'title' => $src['title'],
+      'url' => $src['url'],
+      'number' => $idx + 1,
+    ];
+
+    // Build clean content chunk for LLM (title + content, no URLs)
+    // The LLM doesn't need URLs - it can't fetch them
+    $content_chunks[] = "[Source " . ($idx + 1) . ": {$src['title']}]\n{$src['snippet']}";
+  }
+
+  // Compose chat prompt - send only content to LLM, URLs are for post-processing
+  $messages = [];
+
+  // Build concise RAG instruction prefix for the user message
+  // The site context system message provides the main guardrails when the
+  // optional `ai_site_context` module is enabled. If that module is not
+  // present, we add a conservative default system message so the model has
+  // clear instructions and guardrails.
+  $rag_instructions = "Answer using ONLY the sources below. Each source is numbered. Be concise and cite source numbers when helpful.";
+
+  // Add the user/context message with RAG instructions prepended
+  if (!empty($content_chunks)) {
+    $combined_content = implode("\n\n---\n\n", $content_chunks);
+    $messages[] = [
+      'role' => 'user',
+      'content' => "$rag_instructions\n\n=== SOURCES ===\n\n$combined_content\n\n=== QUESTION ===\n\n$query_text",
+    ];
+  } else {
+    $messages[] = [
+      'role' => 'user',
+      'content' => "$rag_instructions\n\n$query_text",
+    ];
+  }
+
+  // Prepend a system message. Prefer ai_site_context helpers if available.
+  $system_message_text = '';
+  if (module_exists('ai_site_context')) {
+    if (function_exists('ai_site_context_get_prompt')) {
+      $system_message_text = trim(ai_site_context_get_prompt());
+    }
+    elseif (function_exists('ai_site_context_get_system_message')) {
+      $system_message_text = trim(ai_site_context_get_system_message());
+    }
+    // Allow the site context module a chance to alter messages via its hook,
+    // but keep behaviour minimal here – the module should provide the text.
+  }
+
+  if (empty($system_message_text)) {
+    $system_message_text = "You are an AI Agent embedded in a Backdrop CMS website. "
+      . "Your job is to answer user questions using content retrieved from a local vector database. "
+      . "You must only use the retrieved source content to generate your answer — do not use external sources or fabricate any information or links. "
+      . "When sources are provided, base your answer entirely on them and cite them. "
+      . "If the retrieved content does not contain the answer, say so clearly rather than guessing. "
+      . "Limit your response to 5 sentences or less if possible.";
+  }
+
+  // Insert at the front so the model receives system instructions first.
+  array_unshift($messages, [
+    'role' => 'system',
+    'content' => $system_message_text,
+  ]);
+
+  // Store debug messages (system prompt + RAG context) when enabled.
+  if (!empty($form_state['values']['system_messages'])) {
+    $form_state['storage']['debug_messages'] = $messages;
+  }
+  else {
+    $form_state['storage']['debug_messages'] = [];
+  }
+
+  // **Build Results List for Display (skip LLM)**
+  if (empty($sources)) {
+    backdrop_set_message(t('No relevant results found.'), 'warning');
+    return;
+  }
+
+  // Store results with scores for display
+  $results = [];
+  foreach ($sources as $idx => $src) {
+    if (!empty($src['error'])) {
+      continue;
+    }
+    $results[] = [
+      'rank' => $idx + 1,
+      'score' => isset($src['score']) ? round($src['score'], 3) : 'N/A',
+      'title' => $src['title'],
+      'snippet' => $src['snippet'],
+      'url' => $src['url'],
+    ];
+  }
+
+  $form_state['storage']['results'] = $results;
+  $form_state['storage']['query'] = $query_text;
+  $form_state['rebuild'] = TRUE;
+}
+
+/**
+ * Implements hook_ai_explorer_explorers_alter().
+ *
+ * Adds the AI Search Explorer to the AI Explorer overview page if user has access.
+ */
+function ai_search_explorer_ai_explorer_explorers_alter(&$explorers) {
+  $search_item = menu_get_item('admin/config/ai/ai-explorer/search');
+  if (!empty($search_item['access'])) {
+    $explorers[] = [
+      'title' => t('AI Search Explorer'),
+      'path' => 'admin/config/ai/ai-explorer/search',
+      'description' => t('Run search-assisted chat queries using your AI search backend.'),
+    ];
+  }
+}

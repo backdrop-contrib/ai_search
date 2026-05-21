@@ -1,6 +1,0 @@
-name = 'Search API AI Pinecone'
-type = module
-description = 'Provide a Pinecone backend for Search API.'
-package = Search
-backdrop = 1.x
-dependencies[] = search_api_ai

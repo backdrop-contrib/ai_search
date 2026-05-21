@@ -1,0 +1,5 @@
+[AiSearchRagToolsTestCase]
+name = Search API AI RAG tools
+description = Registers and validates the Search API AI retrieval tools.
+group = Search API AI
+file = ai_search_rag_tools.test

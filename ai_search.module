@@ -1,0 +1,1406 @@
+<?php
+
+/**
+ * @file
+ * Search API AI – Backdrop CMS integration.
+ */
+
+require_once backdrop_get_path('module', 'ai_search') . '/includes/AiSearchBackend.inc';
+
+/**
+ * Implements hook_config_info().
+ */
+function ai_search_config_info() {
+  return [
+    'ai_search.settings' => [
+      'label' => t('Search Api Ai Settings'),
+      'group' => t('AI'),
+    ],
+  ];
+}
+
+/**
+ * Implements hook_autoload_info().
+ *
+ * Autoload classes required for Search API AI.
+ */
+function ai_search_autoload_info() {
+  return [
+    'AiSearchBackendInterface' => 'includes/AiSearchBackendInterface.inc',
+    'AITextChunker' => 'includes/AITextChunker.inc',
+    'AiSearchBackendPluginBase' => 'includes/AiSearchBackendPluginBase.inc',
+    'AiSearchBackend' => 'includes/AiSearchBackend.inc',
+    'AiSearchEmbeddingsEngine' => 'includes/AiSearchEmbeddingsEngine.inc',
+    'AISearchDatabaseBoost' => 'includes/AISearchDatabaseBoost.inc',
+    'AiSearchVectorClientBase' => 'includes/AiSearchVectorClientBase.inc',
+    'AiSearchEmbeddingsBase' => 'includes/AiSearchEmbeddingsBase.inc',
+  ];
+}
+
+/**
+ * Implements hook_embedding_engine_info().
+ */
+function ai_search_embedding_engine_info() {
+  if (!function_exists('ai_search_get_embedding_engine_definitions')) {
+    module_load_include('inc', 'ai_search', 'includes/AiSearchBackend');
+  }
+
+  return ai_search_get_embedding_engine_definitions(NULL, FALSE);
+}
+
+/**
+ * Implements hook_search_api_data_type_info().
+ */
+function ai_search_search_api_data_type_info() {
+  return [
+    'llm_vector_embedding' => [
+      'name' => t('Embeddings'),
+      'fallback' => 'string',
+      'conversion callback' => 'ai_search_convert_embedding',
+    ],
+  ];
+}
+
+/**
+ * Implements hook_ai_tools().
+ */
+function ai_search_ai_tools() {
+  module_load_include('inc', 'ai_search', 'includes/rag.tools');
+  return ai_search_rag_tools();
+}
+
+/**
+ * Return registered RAG backend definitions.
+ */
+function ai_search_rag_backend_info() {
+  $definitions = [];
+  foreach (module_implements('ai_search_rag_backend_info') as $module) {
+    $function = $module . '_ai_search_rag_backend_info';
+    if (!function_exists($function)) {
+      continue;
+    }
+    $info = $function();
+    if (!is_array($info)) {
+      continue;
+    }
+    $definitions = array_merge($definitions, $info);
+  }
+  return $definitions;
+}
+
+/**
+ * Resolve the backend definition for one Search API server.
+ */
+function ai_search_get_rag_backend_definition($server, $index = NULL) {
+  if (empty($server) || empty($server->class)) {
+    return NULL;
+  }
+
+  foreach (ai_search_rag_backend_info() as $definition) {
+    if (empty($definition['server_classes']) || !is_array($definition['server_classes'])) {
+      continue;
+    }
+    if (!in_array($server->class, $definition['server_classes'], TRUE)) {
+      continue;
+    }
+    if (!empty($definition['supports_callback']) && is_callable($definition['supports_callback'])) {
+      if (!call_user_func($definition['supports_callback'], $server, $index)) {
+        continue;
+      }
+    }
+    if (empty($definition['query_callback']) || !is_callable($definition['query_callback'])) {
+      continue;
+    }
+    return $definition;
+  }
+
+  return NULL;
+}
+
+/**
+ * Determine whether one Search API index supports ai_search RAG queries.
+ */
+function ai_search_index_supports_rag($index, $server = NULL) {
+  if (empty($index) || empty($index->machine_name)) {
+    return FALSE;
+  }
+  if (empty($server) && !empty($index->server)) {
+    $server = search_api_server_load($index->server);
+  }
+
+  return ai_search_get_rag_backend_definition($server, $index) !== NULL;
+}
+
+/**
+ * Load Search API indexes that support ai_search RAG queries.
+ */
+function ai_search_load_rag_indexes(array $index_ids = []) {
+  $indexes = search_api_index_load_multiple(FALSE);
+  $items = [];
+
+  foreach ($indexes as $index) {
+    if (empty($index) || empty($index->machine_name)) {
+      continue;
+    }
+    if (!empty($index_ids) && !in_array($index->machine_name, $index_ids, TRUE)) {
+      continue;
+    }
+
+    $server = !empty($index->server) ? search_api_server_load($index->server) : NULL;
+    if (!ai_search_index_supports_rag($index, $server)) {
+      continue;
+    }
+
+    $items[] = $index;
+  }
+
+  return $items;
+}
+
+/**
+ * Resolve the embedding model for one Search API index.
+ */
+function ai_search_rag_index_embedding_model($index, $server = NULL) {
+  if (empty($server) && !empty($index->server)) {
+    $server = search_api_server_load($index->server);
+  }
+  if (!empty($server->options['embeddings_engine'])) {
+    return (string) $server->options['embeddings_engine'];
+  }
+
+  if (!empty($server->options['embeddings_engine_configuration']['engine'])) {
+    return (string) $server->options['embeddings_engine_configuration']['engine'];
+  }
+
+  if (!empty($server->options['embeddings_engine_configuration']['model'])) {
+    return (string) $server->options['embeddings_engine_configuration']['model'];
+  }
+
+  if (!empty($index->options['embedding_settings']['embeddings_engine'])) {
+    return (string) $index->options['embedding_settings']['embeddings_engine'];
+  }
+  if (!empty($index->options['embedding_settings']['embeddings_engine_configuration']['engine'])) {
+    return (string) $index->options['embedding_settings']['embeddings_engine_configuration']['engine'];
+  }
+  if (!empty($index->options['embedding_settings']['embeddings_engine_configuration']['model'])) {
+    return (string) $index->options['embedding_settings']['embeddings_engine_configuration']['model'];
+  }
+
+  if (function_exists('config_get')) {
+    $fallback = trim((string) config_get('ai_search.settings', 'embeddings_engine'));
+    if ($fallback !== '') {
+      return $fallback;
+    }
+  }
+
+  return 'text-embedding-3-small';
+}
+
+/**
+ * Resolve the embedding dimension for one Search API index.
+ */
+function ai_search_rag_index_embedding_dimension($index, $server = NULL) {
+  if (empty($server) && !empty($index->server)) {
+    $server = search_api_server_load($index->server);
+  }
+
+  if (!empty($server->options['embeddings_engine_configuration']['dimension'])) {
+    return (int) $server->options['embeddings_engine_configuration']['dimension'];
+  }
+  if (!empty($server->options['dimension'])) {
+    return (int) $server->options['dimension'];
+  }
+  if (!empty($index->options['embedding_settings']['embeddings_engine_configuration']['dimension'])) {
+    return (int) $index->options['embedding_settings']['embeddings_engine_configuration']['dimension'];
+  }
+
+  return ai_search_get_embedding_dimension();
+}
+
+/**
+ * Build one summary record for a RAG-usable Search API index.
+ */
+function ai_search_rag_index_summary($index, $server = NULL) {
+  if (empty($server) && !empty($index->server)) {
+    $server = search_api_server_load($index->server);
+  }
+
+  return [
+    'index_id' => $index->machine_name,
+    'label' => !empty($index->name) ? $index->name : $index->machine_name,
+    'server_id' => !empty($server->machine_name) ? $server->machine_name : '',
+    'backend' => !empty($server->class) ? $server->class : '',
+    'embedding_model' => ai_search_rag_index_embedding_model($index, $server),
+    'embedding_dimension' => ai_search_rag_index_embedding_dimension($index, $server),
+  ];
+}
+
+/**
+ * Return available RAG index summaries for UI consumers.
+ */
+function ai_search_list_rag_indexes() {
+  $items = [];
+  foreach (ai_search_load_rag_indexes() as $index) {
+    $server = !empty($index->server) ? search_api_server_load($index->server) : NULL;
+    $items[] = ai_search_rag_index_summary($index, $server);
+  }
+
+  return [
+    'count' => count($items),
+    'indexes' => $items,
+  ];
+}
+
+/**
+ * Default embedding dimension when nothing else is available.
+ */
+function ai_search_get_embedding_dimension() {
+  return 1536;
+}
+
+/**
+ * Return non-vector index fields that should be treated as contextual metadata.
+ */
+function ai_search_get_contextual_fields(array $index_options) {
+  if (empty($index_options['fields']) || !is_array($index_options['fields'])) {
+    return [];
+  }
+
+  $vector_fields = [];
+  foreach ($index_options['fields'] as $field_name => $field_info) {
+    if (!empty($field_info['real_type']) && $field_info['real_type'] === 'llm_vector_embedding') {
+      $vector_fields[] = $field_name;
+    }
+  }
+
+  return array_values(array_diff(array_keys($index_options['fields']), $vector_fields));
+}
+
+/**
+ * Build contextual metadata from an entity using the index field configuration.
+ */
+function ai_search_collect_context_metadata($entity_type, $entity_id, $entity, array $contextual_fields, $item = NULL) {
+  $title = '';
+  if ($entity_type === 'node' && !empty($entity->title)) {
+    $title = $entity->title;
+  }
+  elseif ($entity_type === 'taxonomy_term' && !empty($entity->name)) {
+    $title = $entity->name;
+  }
+  elseif ($entity_type === 'paragraphs_item' && !empty($entity->title)) {
+    $title = $entity->title;
+  }
+
+  $context_metadata = ['title' => $title];
+  foreach ($contextual_fields as $field_name) {
+    $value = NULL;
+    if ($item && isset($item->{$field_name})) {
+      $value = $item->{$field_name};
+    }
+    elseif (isset($entity->{$field_name})) {
+      $value = $entity->{$field_name};
+    }
+
+    if ($value !== NULL) {
+      if (is_array($value) && isset($value['und']) && is_array($value['und'])) {
+        $is_taxonomy = FALSE;
+        $tids = [];
+        $labels = [];
+        $text_values = [];
+
+        foreach ($value['und'] as $it) {
+          if (!empty($it['tid'])) {
+            $is_taxonomy = TRUE;
+            $tids[] = $it['tid'];
+            $term = taxonomy_term_load($it['tid']);
+            if ($term && !empty($term->name)) {
+              $labels[] = $term->name;
+            }
+          }
+          if (!empty($it['value'])) {
+            $text_values[] = $it['value'];
+          }
+        }
+
+        if (!empty($text_values)) {
+          $context_metadata[$field_name] = count($text_values) === 1 ? $text_values[0] : $text_values;
+        }
+        if ($is_taxonomy) {
+          $context_metadata[$field_name . '_tids'] = $tids;
+          $context_metadata[$field_name . '_names'] = $labels;
+        }
+      }
+      else {
+        $context_metadata[$field_name] = $value;
+      }
+    }
+    else {
+      $context_metadata[$field_name] = '';
+    }
+  }
+
+  $relative_url = '';
+  $absolute_url = '';
+  if ($entity_type === 'node') {
+    $internal_path = "node/$entity_id";
+    $path = path_load(['source' => $internal_path]);
+    $alias = !empty($path['alias']) ? $path['alias'] : $internal_path;
+    $relative_url = ai_search_normalize_relative_url($alias);
+    $absolute_url = url($internal_path, ['absolute' => TRUE]);
+  }
+  elseif ($entity_type === 'taxonomy_term') {
+    $internal_path = "taxonomy/term/$entity_id";
+    $path = path_load(['source' => $internal_path]);
+    $alias = !empty($path['alias']) ? $path['alias'] : $internal_path;
+    $relative_url = ai_search_normalize_relative_url($alias);
+    $absolute_url = url($internal_path, ['absolute' => TRUE]);
+  }
+  $context_metadata['url'] = $absolute_url;
+  $context_metadata['search_api_url'] = $relative_url;
+
+  return $context_metadata;
+}
+
+/**
+ * Normalize a site-relative URL/path for UI-safe linking.
+ */
+function ai_search_normalize_relative_url($path) {
+  $path = trim((string) $path);
+  if ($path === '') {
+    return '';
+  }
+  if (preg_match('@^[a-z][a-z0-9+.-]*://@i', $path) || strpos($path, '//') === 0) {
+    return $path;
+  }
+  return ($path[0] === '/') ? $path : '/' . $path;
+}
+
+/**
+ * Return canonical core fields required from Milvus match rows.
+ */
+function ai_search_milvus_core_output_fields() {
+  return ['content', 'nid', 'title', 'backdrop_entity_id', 'backdrop_long_id', 'field_name', 'server_id', 'index_id'];
+}
+
+/**
+ * Return normalized index options, preferring the live DB copy when needed.
+ */
+function ai_search_get_index_options($index) {
+  if (!empty($index->options) && is_array($index->options)) {
+    return $index->options;
+  }
+
+  if (empty($index) || empty($index->machine_name)) {
+    return [];
+  }
+
+  $serialized = db_select('search_api_index', 's')
+    ->fields('s', ['options'])
+    ->condition('machine_name', $index->machine_name)
+    ->execute()
+    ->fetchField();
+
+  if (!$serialized) {
+    return [];
+  }
+
+  $options = @unserialize($serialized);
+  return is_array($options) ? $options : [];
+}
+
+/**
+ * Add local contextual metadata to raw backend matches.
+ */
+function ai_search_enrich_backend_matches($index, array $matches) {
+  $index_options = ai_search_get_index_options($index);
+  $contextual_fields = ai_search_get_contextual_fields($index_options);
+
+  if (empty($contextual_fields)) {
+    return $matches;
+  }
+
+  foreach ($matches as &$match) {
+    if (!is_array($match)) {
+      continue;
+    }
+
+    $metadata = !empty($match['metadata']) && is_array($match['metadata']) ? $match['metadata'] : $match;
+    $entity_type = NULL;
+    $entity_id = NULL;
+
+    if (!empty($metadata['backdrop_entity_id']) && preg_match('/^entity:([^\/]+)\/(\d+)(?::.*)?$/', $metadata['backdrop_entity_id'], $m)) {
+      $entity_type = $m[1];
+      $entity_id = $m[2];
+    }
+    elseif (!empty($metadata['entity_type']) && !empty($metadata['entity_id'])) {
+      $entity_type = (string) $metadata['entity_type'];
+      $entity_id = (string) $metadata['entity_id'];
+    }
+    elseif (!empty($metadata['nid'])) {
+      $entity_type = 'node';
+      $entity_id = (string) $metadata['nid'];
+    }
+    elseif (!empty($metadata['tid'])) {
+      $entity_type = 'taxonomy_term';
+      $entity_id = (string) $metadata['tid'];
+    }
+    elseif (!empty($metadata['pid'])) {
+      $entity_type = 'paragraphs_item';
+      $entity_id = (string) $metadata['pid'];
+    }
+    elseif (!empty($match['id']) && preg_match('/^entity:([^\/]+)\/(\d+)(?::.*)?$/', $match['id'], $m)) {
+      $entity_type = $m[1];
+      $entity_id = $m[2];
+    }
+
+    if (!$entity_type || !$entity_id) {
+      continue;
+    }
+
+    $entity = entity_load($entity_type, $entity_id);
+    if (!$entity) {
+      continue;
+    }
+
+    $context_metadata = ai_search_collect_context_metadata($entity_type, $entity_id, $entity, $contextual_fields);
+    $enriched_metadata = array_merge($context_metadata, $metadata);
+
+    if (!empty($match['metadata']) && is_array($match['metadata'])) {
+      $match['metadata'] = $enriched_metadata;
+    }
+    else {
+      $match = array_merge($context_metadata, $match);
+    }
+  }
+  unset($match);
+
+  return $matches;
+}
+
+/**
+ * Extract normalized matches from a backend result payload.
+ */
+function ai_search_backend_result_matches($backend, $vector_results, $index = NULL) {
+  if (is_object($backend)) {
+    $definition = ai_search_get_rag_backend_definition($backend, $index);
+    if ($definition && !empty($definition['matches_callback']) && is_callable($definition['matches_callback'])) {
+      return call_user_func($definition['matches_callback'], $vector_results, $backend, $index);
+    }
+    $backend_class = !empty($backend->class) ? $backend->class : '';
+  }
+  else {
+    $backend_class = (string) $backend;
+  }
+
+  if (($backend_class === 'pinecone' || $backend_class === 'pinecone_service') && !empty($vector_results['matches']) && is_array($vector_results['matches'])) {
+    return $vector_results['matches'];
+  }
+
+  if ($backend_class === 'milvus') {
+    if (!empty($vector_results['results']) && is_array($vector_results['results'])) {
+      return array_values($vector_results['results']);
+    }
+    if (is_array($vector_results)) {
+      return array_values($vector_results);
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Return normalized metadata for one backend match.
+ */
+function ai_search_match_metadata(array $match) {
+  return !empty($match['metadata']) && is_array($match['metadata']) ? $match['metadata'] : $match;
+}
+
+/**
+ * Return the similarity score for one backend match.
+ */
+function ai_search_match_score(array $match) {
+  if (isset($match['score'])) {
+    return (float) $match['score'];
+  }
+  if (isset($match['distance'])) {
+    return (float) $match['distance'];
+  }
+
+  return NULL;
+}
+
+/**
+ * Resolve entity type and id for one backend match.
+ */
+function ai_search_match_entity_reference(array $match) {
+  $metadata = ai_search_match_metadata($match);
+  $entity_type = '';
+  $entity_id = '';
+
+  if (!empty($metadata['backdrop_entity_id']) && preg_match('/^entity:([^\/]+)\/(\d+)(?::.*)?$/', $metadata['backdrop_entity_id'], $m)) {
+    $entity_type = $m[1];
+    $entity_id = $m[2];
+  }
+  elseif (!empty($match['id']) && preg_match('/^entity:([^\/]+)\/(\d+)(?::.*)?$/', $match['id'], $m)) {
+    $entity_type = $m[1];
+    $entity_id = $m[2];
+  }
+  elseif (!empty($metadata['entity_type']) && !empty($metadata['entity_id'])) {
+    $entity_type = (string) $metadata['entity_type'];
+    $entity_id = (string) $metadata['entity_id'];
+  }
+  elseif (!empty($metadata['nid'])) {
+    $entity_type = 'node';
+    $entity_id = (string) $metadata['nid'];
+  }
+  elseif (!empty($metadata['tid'])) {
+    $entity_type = 'taxonomy_term';
+    $entity_id = (string) $metadata['tid'];
+  }
+  elseif (!empty($metadata['pid'])) {
+    $entity_type = 'paragraphs_item';
+    $entity_id = (string) $metadata['pid'];
+  }
+
+  return [
+    'metadata' => $metadata,
+    'entity_type' => $entity_type,
+    'entity_id' => $entity_id,
+  ];
+}
+
+/**
+ * Load the entity referenced by one backend match.
+ */
+function ai_search_match_entity(array $match) {
+  $reference = ai_search_match_entity_reference($match);
+  if ($reference['entity_type'] === '' || $reference['entity_id'] === '') {
+    return NULL;
+  }
+
+  $entity = entity_load($reference['entity_type'], $reference['entity_id']);
+  if (!$entity) {
+    return NULL;
+  }
+
+  $reference['entity'] = $entity;
+  return $reference;
+}
+
+/**
+ * Return a readable title for one match entity.
+ */
+function ai_search_match_title($entity_type, $entity, array $metadata = []) {
+  if (!empty($metadata['title'])) {
+    return trim((string) $metadata['title']);
+  }
+  if ($entity_type === 'taxonomy_term' && !empty($entity->name)) {
+    return (string) $entity->name;
+  }
+  if (is_object($entity) && method_exists($entity, 'label')) {
+    return (string) $entity->label();
+  }
+  if (!empty($entity->label) && is_string($entity->label)) {
+    return $entity->label;
+  }
+  if (!empty($entity->title)) {
+    return (string) $entity->title;
+  }
+
+  return t('Untitled');
+}
+
+/**
+ * Return a relative URL for one match entity.
+ */
+function ai_search_match_relative_url($entity_type, $entity, array $metadata = []) {
+  if (!empty($metadata['search_api_url'])) {
+    return ai_search_normalize_relative_url($metadata['search_api_url']);
+  }
+
+  if (is_object($entity) && method_exists($entity, 'uri')) {
+    $uri = $entity->uri();
+    if (!empty($uri['path'])) {
+      return url($uri['path']);
+    }
+  }
+
+  if ($entity_type === 'node' && !empty($entity->nid)) {
+    return url('node/' . $entity->nid);
+  }
+  if ($entity_type === 'taxonomy_term' && !empty($entity->tid)) {
+    return url('taxonomy/term/' . $entity->tid);
+  }
+
+  return '';
+}
+
+/**
+ * Return an absolute URL for one match entity.
+ */
+function ai_search_match_absolute_url($entity_type, $entity, array $metadata = []) {
+  if (!empty($metadata['url'])) {
+    return (string) $metadata['url'];
+  }
+  if (!empty($metadata['search_api_url'])) {
+    return url($metadata['search_api_url'], ['absolute' => TRUE]);
+  }
+
+  if (is_object($entity) && method_exists($entity, 'uri')) {
+    $uri = $entity->uri();
+    if (!empty($uri['path'])) {
+      return url($uri['path'], ['absolute' => TRUE]);
+    }
+  }
+
+  if ($entity_type === 'node' && !empty($entity->nid)) {
+    return url('node/' . $entity->nid, ['absolute' => TRUE]);
+  }
+  if ($entity_type === 'taxonomy_term' && !empty($entity->tid)) {
+    return url('taxonomy/term/' . $entity->tid, ['absolute' => TRUE]);
+  }
+
+  return '';
+}
+
+/**
+ * Return a normalized text snippet for one match.
+ */
+function ai_search_match_snippet(array $match, array $metadata = [], $max_length = 600) {
+  $text = '';
+  if (!empty($metadata['content'])) {
+    $text = (string) $metadata['content'];
+  }
+  elseif (!empty($match['excerpt'])) {
+    $text = (string) $match['excerpt'];
+  }
+  elseif (!empty($match['content'])) {
+    $text = (string) $match['content'];
+  }
+
+  $text = AIContentExtractor::htmlToMarkdown($text);
+  if ($text === '') {
+    return '';
+  }
+
+  if ($max_length > 0 && mb_strlen($text) > $max_length) {
+    $text = mb_substr($text, 0, $max_length) . '...';
+  }
+
+  return $text;
+}
+
+/**
+ * Run a vector query against the configured backend with shared behavior.
+ */
+function ai_search_query_backend($server, $index, array $vector, $dimension, $top_k) {
+  $definition = ai_search_get_rag_backend_definition($server, $index);
+  if (!$definition || empty($definition['query_callback']) || !is_callable($definition['query_callback'])) {
+    throw new \Exception('Unsupported backend.');
+  }
+
+  return call_user_func($definition['query_callback'], $server, $index, $vector, $dimension, $top_k);
+}
+
+/**
+ * Query a Pinecone-compatible backend for ai_search RAG.
+ */
+function ai_search_query_backend_pinecone($server, $index, array $vector, $dimension, $top_k) {
+  if (!class_exists('AIPineconeService')) {
+    require_once backdrop_get_path('module', 'ai_search') . '/modules/ai_search_pinecone/includes/AIPineconeService.inc';
+  }
+  if (!class_exists('AiSearchPineconeVectorClient')) {
+    require_once backdrop_get_path('module', 'ai_search') . '/modules/ai_search_pinecone/includes/AiSearchPineconeVectorClient.php';
+  }
+
+  $service = new AIPineconeService($server);
+  $namespace = method_exists($service, 'getNamespace') ? $service->getNamespace($index) : $index->machine_name;
+  $client = new AiSearchPineconeVectorClient($server->options);
+  $result = $client->query([
+    'vector' => $vector,
+    'top_k' => $top_k,
+    'namespace' => $namespace,
+    'include_metadata' => TRUE,
+    'expected_dimension' => $dimension,
+  ]);
+
+  if (!empty($result['matches']) && is_array($result['matches'])) {
+    $result['matches'] = ai_search_enrich_backend_matches($index, $result['matches']);
+  }
+
+  return $result;
+}
+
+/**
+ * Query a Milvus-compatible backend for ai_search RAG.
+ */
+function ai_search_query_backend_milvus($server, $index, array $vector, $dimension, $top_k) {
+  if (!class_exists('AIMilvusService')) {
+    require_once backdrop_get_path('module', 'ai_search_provider_milvus') . '/includes/AIMilvusService.inc';
+  }
+  if (!class_exists('AiSearchMilvusVectorClient')) {
+    require_once backdrop_get_path('module', 'ai_search_provider_milvus') . '/includes/AiSearchMilvusVectorClient.php';
+  }
+
+  $service = new AIMilvusService($server);
+  $collection = method_exists($service, 'getCollection') ? $service->getCollection($index) : $index->machine_name;
+  $database = isset($server->options['database']) ? $server->options['database'] : 'default';
+  $client = new AiSearchMilvusVectorClient($server->options);
+
+  $result = $client->query([
+    'vector' => $vector,
+    'top_k' => $top_k,
+    'collection' => $collection,
+    'database' => $database,
+    'output_fields' => ai_search_milvus_core_output_fields(),
+  ]);
+
+  return ai_search_enrich_backend_matches($index, is_array($result) ? $result : []);
+}
+
+/**
+ * Extract normalized Pinecone match rows from a backend response.
+ */
+function ai_search_backend_result_matches_pinecone($vector_results, $server = NULL, $index = NULL) {
+  return !empty($vector_results['matches']) && is_array($vector_results['matches']) ? $vector_results['matches'] : [];
+}
+
+/**
+ * Extract normalized Milvus match rows from a backend response.
+ */
+function ai_search_backend_result_matches_milvus($vector_results, $server = NULL, $index = NULL) {
+  if (!empty($vector_results['results']) && is_array($vector_results['results'])) {
+    return array_values($vector_results['results']);
+  }
+  return is_array($vector_results) ? array_values($vector_results) : [];
+}
+
+
+/**
+ * Convert text to embedding vectors (main conversion function).
+ * Uses compatibility helpers to resolve AI API clients when needed.
+ */
+function ai_search_convert_embedding($value, $original_type, $type, array $embedding_settings, $field_name = 'unknown_field', $server = NULL) {
+  if ($type !== 'llm_vector_embedding' || !is_string($value)) {
+    watchdog('ai_search', 'Bad embedding conversion call: type=@type, is_string=@is_string', [
+      '@type' => $type,
+      '@is_string' => is_string($value) ? 'yes' : 'no',
+    ], WATCHDOG_WARNING);
+    return [];
+  }
+
+  $prepared_text = AIStringHelper::prepareText($value);
+  if (empty($prepared_text)) {
+    return [];
+  }
+
+  // Prefer server-level chunking, otherwise index-provided.
+  if ($server) {
+    $embedding_strategy = $server->options['embedding_strategy'] ?? [];
+  }
+  else {
+    $embedding_strategy = $embedding_settings['embedding_strategy'] ?? [];
+  }
+  $chunk_size    = !empty($embedding_strategy['chunk_size']) ? (int) $embedding_strategy['chunk_size'] : 500;
+  $chunk_overlap = !empty($embedding_strategy['chunk_overlap']) ? (int) $embedding_strategy['chunk_overlap'] : 100;
+  $chunks = AITextChunker::chunkText($prepared_text, $chunk_size, $chunk_overlap);
+
+  try {
+    $config = ai_search_get_embedding_engine_config($embedding_settings);
+  }
+  catch (\Exception $e) {
+    watchdog('ai_search', 'Embedding configuration error for @field: @message', [
+      '@field' => $field_name,
+      '@message' => $e->getMessage(),
+    ], WATCHDOG_ERROR);
+    return [];
+  }
+  $model = $config['engine'];
+  $expected_dimension = $config['dimension'];
+
+  if (empty($model)) {
+    watchdog('ai_search', 'No valid embeddings model set.', [], WATCHDOG_ERROR);
+    return [];
+  }
+
+  // Prefer the shared engine loader so provider modules can register their own
+  // embedding adapters via hook_embedding_engine_info().
+  $engine_instance = NULL;
+  $api_client = NULL;
+  $stripped_model = NULL;
+  list($provider) = ai_search_parse_model_id($model);
+
+  if ($provider && $provider !== ai_default_provider_id()) {
+    module_load_include('inc', 'ai_search', 'includes/AiSearchBackend');
+    if (function_exists('ai_search_load_embeddings_engine')) {
+      $engine_instance = ai_search_load_embeddings_engine([
+        'embeddings_engine' => $model,
+        'embeddings_engine_configuration' => [
+          'dimension' => (int) $expected_dimension,
+        ],
+      ]);
+    }
+  }
+
+  if (!$engine_instance) {
+    // Try to resolve an AI API client for this model. Only log the fallback
+    // if we actually obtained a client — otherwise the later check will
+    // surface a clear error.
+    $api_client = ai_get_api_for_model($model, $stripped_model);
+    if ($api_client) {
+      // Determine the model id to check on the client (prefer stripped model)
+      list(, $model_suffix) = ai_search_parse_model_id($model);
+      $check_model = !empty($stripped_model) ? $stripped_model : $model_suffix;
+      // Verify that the resolved client actually exposes the requested model.
+      if (!ai_search_model_exists($api_client, $check_model)) {
+        // Model isn't present on the client — don't proceed with fallback.
+        watchdog('ai_search', 'AI client resolved but model @model not found; skipping legacy fallback', ['@model' => $check_model], WATCHDOG_WARNING);
+        $api_client = NULL;
+      }
+      else {
+        watchdog('ai_search', 'Using AI API fallback for model: @model', ['@model' => $model], WATCHDOG_DEBUG);
+      }
+    }
+
+  }
+
+  if (!$api_client && !$engine_instance) {
+    watchdog('ai_search', 'Failed to load API for model: @model', ['@model' => $model], WATCHDOG_ERROR);
+    return [];
+  }
+
+  // Record that we are starting an embedding generation for logging context
+  if ($api_client && method_exists($api_client, 'recordLog')) {
+    $api_client->recordLog('embedding_start', $model, ['text_len' => strlen($prepared_text)], NULL, TRUE, 0);
+  }
+
+  $chunked_vectors = [];
+  foreach ($chunks as $i => $chunk) {
+    $chunk_clean = AIStringHelper::prepareText($chunk);
+    if (empty($chunk_clean)) {
+      continue;
+    }
+    try {
+      if ($engine_instance) {
+        $vector = $engine_instance->generateEmbeddings($chunk_clean);
+      }
+      else {
+        // We resolved the AI API client above; prefer the stripped model name
+        $use_model = isset($stripped_model) && !empty($stripped_model) ? $stripped_model : $model;
+        // Use the compatibility wrapper to call embeddings in various client shapes
+        $vector = $api_client->embedding($chunk_clean, $use_model);
+      }
+
+      if (!is_array($vector) || count($vector) !== (int) $expected_dimension) {
+        watchdog('ai_search', 'Invalid chunk vector size for @field: expected @expected, got @actual', [
+          '@field' => $field_name,
+          '@expected' => $expected_dimension,
+          '@actual' => is_array($vector) ? count($vector) : gettype($vector),
+        ], WATCHDOG_ERROR);
+        continue;
+      }
+      $chunked_vectors[] = [
+        'vector' => $vector,
+        'chunk'  => $chunk,
+      ];
+    }
+    catch (\Exception $e) {
+      watchdog('ai_search', 'Embedding API error for @field: @message', [
+        '@field' => $field_name,
+        '@message' => $e->getMessage(),
+      ], WATCHDOG_ERROR);
+    }
+  }
+  return $chunked_vectors;
+}
+
+/**
+ * Get embedding model and dimension from Search API AI index options.
+ */
+function ai_search_get_embedding_engine_config(array $embedding_settings) {
+  if (empty($embedding_settings['embeddings_engine'])) {
+    throw new Exception('No embedding engine set in index options.');
+  }
+  $model = $embedding_settings['embeddings_engine'];
+  $dimension = isset($embedding_settings['embeddings_engine_configuration']['dimension'])
+    ? (int) $embedding_settings['embeddings_engine_configuration']['dimension']
+    : 1536;
+
+  return [
+    'engine' => $model,
+    'dimension' => $dimension,
+  ];
+}
+
+
+/**
+ * Implements hook_form_alter().
+ *
+ * Unified handler for:
+ *   - search_api_admin_add_server
+ *   - search_api_admin_server_edit
+ *   - search_api_server_edit_form (alt ID some installs use)
+ *   - search_api_admin_add_index
+ *   - search_api_admin_index_edit
+ */
+function ai_search_form_alter(&$form, &$form_state, $form_id) {
+
+  // ===== Server ADD/EDIT: place embedding_strategy INSIDE options[form] =====
+  if (in_array($form_id, ['search_api_admin_add_server', 'search_api_admin_server_edit', 'search_api_server_edit_form'], TRUE)) {
+
+    // Standardize weights for top-level bits (not strictly required).
+    if (isset($form['name']))         { $form['name']['#weight'] = 0; }
+    if (isset($form['machine_name'])) { $form['machine_name']['#weight'] = 1; }
+    if (isset($form['enabled']))      { $form['enabled']['#weight'] = 2; }
+    if (isset($form['description']))  { $form['description']['#weight'] = 3; }
+    if (isset($form['class']))        { $form['class']['#weight'] = 5; }
+    if (isset($form['options']))      { $form['options']['#weight'] = 6; }
+    if (isset($form['submit']))       { $form['submit']['#weight'] = 7; }
+
+    // Ensure the expected structure exists for add/edit:
+    if (!isset($form['options'])) {
+      $form['options'] = ['#type' => 'fieldset', '#tree' => TRUE];
+    }
+    if (!isset($form['options']['form'])) {
+      // Service classes put their config here; ensure the container exists so our fields get into options[form].
+      $form['options']['form'] = [];
+    }
+
+    // Defaults from saved server on edit or any posted values.
+    $server   = isset($form_state['server']) ? $form_state['server'] : NULL;
+    $settings = [];
+    if ($server && !empty($server->options['embedding_strategy'])) {
+      $settings = $server->options['embedding_strategy'];
+    }
+    elseif (!empty($form_state['values']['options']['form']['embedding_strategy'])) {
+      $settings = $form_state['values']['options']['form']['embedding_strategy'];
+    }
+
+    // Place our fieldset *inside* options[form] so add_server_submit picks it up.
+    $form['options']['form']['embedding_strategy'] = [
+      '#type'   => 'fieldset',
+      '#title'  => t('Embedding Strategy Configuration'),
+      '#tree'   => TRUE,
+      '#weight' => 50, // after most service options
+    ];
+    $form['options']['form']['embedding_strategy']['chunk_size'] = [
+      '#type' => 'textfield',
+      '#title' => t('Maximum chunk size (tokens]'),
+      '#default_value' => $settings['chunk_size'] ?? 500,
+      '#description' => t('Maximum chunk size allowed when breaking up larger content.'),
+    ];
+    $form['options']['form']['embedding_strategy']['chunk_overlap'] = [
+      '#type' => 'textfield',
+      '#title' => t('Minimum chunk overlap (tokens]'),
+      '#default_value' => $settings['chunk_overlap'] ?? 100,
+      '#description' => t('Number of tokens to overlap between chunks.'),
+    ];
+    // After you create $form['options']['form']['embedding_strategy']...
+    $form['options']['form']['embedding_strategy']['how_to'] = [
+      '#type'        => 'fieldset',
+      '#title'       => t('How to select your chunk size'),
+      '#tree'        => TRUE,
+      '#collapsible' => TRUE,
+      '#collapsed'   => TRUE,
+      '#weight'      => 60,
+    ];
+
+    $form['options']['form']['embedding_strategy']['how_to']['body'] = [
+      '#type'   => 'item',
+      '#markup' => '
+    <p><strong>What this does:</strong> This setting determines the number of tokens in each text chunk that will be stored in the vector database. Proper configuration is crucial for optimizing search accuracy and database performance.</p>
+
+    <p><em>You should do your own research and come to your own conclusions, but here is some general AI-generated advice:</em></p>
+
+    <h3>Smaller Chunk Size (e.g., 50–100 tokens]</h3>
+    <ul>
+      <li><strong>Use cases:</strong> Highly granular search where detailed segments must be retrievable.</li>
+      <li><strong>Advantages:</strong> Increases precision; easier to find specific phrases or concepts.</li>
+      <li><strong>Disadvantages:</strong> More chunks → larger DB size and potentially more processing.</li>
+    </ul>
+
+    <h3>Larger Chunk Size (e.g., 200–500 tokens]</h3>
+    <ul>
+      <li><strong>Use cases:</strong> General search where broader segments are fine.</li>
+      <li><strong>Advantages:</strong> Fewer chunks → better storage and search throughput.</li>
+      <li><strong>Disadvantages:</strong> Lower accuracy for very specific queries.</li>
+    </ul>
+
+    <h3>Balance Between Size and Performance</h3>
+    <p>Aim for a balance that fits your content and queries. Consider the nature of the text and typical search behavior.</p>
+
+    <h3>Additional considerations</h3>
+    <ul>
+      <li><strong>Text complexity:</strong> Dense/technical text often benefits from smaller chunks.</li>
+      <li><strong>Search behavior:</strong> If users hunt for fine details, prefer smaller chunks; for broad recall, larger can work.</li>
+      <li><strong>System resources:</strong> Larger chunks reduce DB load but lower granularity—pick a size your infra handles well.</li>
+    </ul>
+  ',
+    ];
+
+
+    // Validate the two fields (values live at options)[form][embedding_strategy][...]].
+    $v = &$form_state['values'];
+    $path = ['options','form','embedding_strategy'];
+    $cs = _ai_search_nested_value($v, array_merge($path, ['chunk_size']));
+    $co = _ai_search_nested_value($v, array_merge($path, ['chunk_overlap']));
+
+    // Attach a lightweight validate to guard numbers.
+    $form['#validate'][] = 'ai_search_form_server_embedding_strategy_validate';
+  }
+
+}
+
+/**
+ * Tiny helper to fetch nested value without notices.
+ */
+function _ai_search_nested_value(&$array, $keys) {
+  $ref = &$array;
+  foreach ($keys as $k) {
+    if (!is_array($ref) || !array_key_exists($k, $ref)) {
+      return NULL;
+    }
+    $ref = &$ref[$k];
+  }
+  return $ref;
+}
+
+/**
+ * Server-side validate for embedding strategy fields.
+ * Works for both add/edit because fields live in options][form][embedding_strategy].
+ */
+function ai_search_form_server_embedding_strategy_validate($form, &$form_state) {
+  if (empty($form_state['values']['options']['form']['embedding_strategy'])) {
+    return;
+  }
+  $vals = $form_state['values']['options']['form']['embedding_strategy'];
+
+  if (isset($vals['chunk_size']) && (!is_numeric($vals['chunk_size']) || $vals['chunk_size'] <= 0)) {
+    form_set_error('options][form][embedding_strategy][chunk_size', t('Chunk size must be a positive number.'));
+  }
+  if (isset($vals['chunk_overlap']) && (!is_numeric($vals['chunk_overlap']) || $vals['chunk_overlap'] < 0)) {
+    form_set_error('options][form][embedding_strategy][chunk_overlap', t('Chunk overlap must be a non-negative number.'));
+  }
+}
+
+
+
+/**
+ * Submit handler for the legacy global engine config form (kept intact).
+ */
+function ai_search_embedding_engine_config_form_submit($form, &$form_state) {
+  $selected_engine = $form_state['values']['options']['embeddings_engine'] ?? '';
+  $engine_config = $form_state['values']['options']['embeddings_engine_configuration'] ?? ['dimension' => 1536];
+
+  $all_engines = ai_search_get_embedding_engine_definitions(NULL, TRUE);
+
+  if ($selected_engine && isset($all_engines[$selected_engine])) {
+    $engine_class = $all_engines[$selected_engine]['class'];
+
+    if (class_exists($engine_class)) {
+      try {
+        $api_key_name = config_get('ai.settings', 'api_key');
+        $api_key = key_get_key_value($api_key_name);
+        if (!$api_key) {
+          throw new Exception('AI API key is missing.');
+        }
+
+        $client = new AIApi($api_key);
+        $engine_instance = new $engine_class(config_get('ai_search.settings'), $client);
+
+        $model_name = method_exists($engine_instance, 'getModelName')
+          ? $engine_instance->getModelName()
+          : $selected_engine;
+
+        if (method_exists($engine_instance, 'getDimension')) {
+          $engine_config['dimension'] = $engine_instance->getDimension();
+        }
+      }
+      catch (\Exception $e) {
+        backdrop_set_message(t('Failed to load embedding engine: @message', [
+          '@message' => $e->getMessage(),
+        ]), 'error');
+        watchdog('ai_search', 'Error initializing embedding engine @engine: @message', [
+          '@engine' => $selected_engine,
+          '@message' => $e->getMessage(),
+        ], WATCHDOG_ERROR);
+      }
+    }
+  }
+
+  // Persist legacy/global config (separate from per-index settings).
+  config_set('ai_search.settings', 'embeddings_engine', $model_name);
+  config_set('ai_search.settings', 'embeddings_engine_configuration', $engine_config);
+
+  backdrop_set_message(t('Embedding engine configuration has been saved.'));
+}
+
+/**
+ * Render an entity into plain text for embedding/indexing purposes.
+ */
+function ai_search_render_entity_text($entity_type, $entity_id, $entity, $view_mode = 'full') {
+  if (empty($entity_type) || empty($entity_id) || !is_object($entity)) {
+    return '';
+  }
+
+  $rendered = AIContentExtractor::renderEntityToMarkdown($entity_type, $entity, $view_mode);
+  if ($rendered !== '') {
+    return $rendered;
+  }
+
+  return AIContentExtractor::extractEntityText($entity_type, $entity, [
+    'view_mode' => $view_mode,
+    'include_label' => FALSE,
+  ]);
+}
+
+/**
+ * Inject embeddings while indexing.
+ */
+function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $index) {
+  watchdog('ai_search_debug', 'Hook called for index: @index with @count items', [
+    '@index' => $index->machine_name,
+    '@count' => count($items),
+  ], WATCHDOG_INFO);
+  
+  global $ai_search_vectors;
+  if (!isset($ai_search_vectors) || !is_array($ai_search_vectors)) {
+    $ai_search_vectors = [];
+  }
+
+  $query = db_select('search_api_index', 's')
+    ->fields('s', ['options'])
+    ->condition('machine_name', $index->machine_name)
+    ->execute()
+    ->fetchField();
+  if (!$query) {
+    watchdog('ai_search', 'Could not load index configuration.', [], WATCHDOG_ERROR);
+    return;
+  }
+  $index_options = @unserialize($query);
+  if (empty($index_options['fields']) || !is_array($index_options['fields'])) {
+    watchdog('ai_search', 'No valid fields found in index configuration.', [], WATCHDOG_ERROR);
+    return;
+  }
+
+  // Load embedding settings from the server (canonical location).
+  // Fall back to index-level settings for backward compatibility with existing data.
+  $server = !empty($index->server) ? search_api_server_load($index->server) : NULL;
+  $embedding_settings = [];
+  if ($server && !empty($server->options['embeddings_engine'])) {
+    $embedding_settings = [
+      'embeddings_engine' => $server->options['embeddings_engine'],
+      'embeddings_engine_configuration' => $server->options['embeddings_engine_configuration'] ?? ['dimension' => 1536],
+    ];
+  }
+  elseif (!empty($index_options['embedding_settings'])) {
+    $embedding_settings = $index_options['embedding_settings'];
+  }
+  if (!is_array($embedding_settings)) {
+    $embedding_settings = [];
+  }
+
+  $vector_fields = [];
+  foreach ($index_options['fields'] as $field_name => $field_info) {
+    if (!empty($field_info['real_type']) && $field_info['real_type'] === 'llm_vector_embedding') {
+      $vector_fields[] = $field_name;
+    }
+  }
+  if (empty($vector_fields)) {
+    // Many indexes do not participate in vector embedding. Treat that as a
+    // normal skip so routine indexing does not flood the watchdog log.
+    return;
+  }
+
+  $contextual_fields = ai_search_get_contextual_fields($index_options);
+
+  $view_mode = 'full';
+  if (!empty($index_options['data_alter_callbacks']['search_api_alter_add_viewed_entity']['settings']['mode'])) {
+    $view_mode = $index_options['data_alter_callbacks']['search_api_alter_add_viewed_entity']['settings']['mode'];
+  }
+  $expected_dimension = $embedding_settings['embeddings_engine_configuration']['dimension'] ?? 1536;
+
+
+  foreach ($items as $id => $item) {
+    $entity_type = NULL; $entity_id = NULL; $entity = NULL;
+    if (is_string($id) && strpos($id, '/') !== FALSE) {
+      list($entity_type, $entity_id) = explode('/', $id, 2);
+      $entity = entity_load($entity_type, $entity_id);
+    }
+    elseif (is_object($item)) {
+      if (isset($item->nid))            { $entity_type = 'node';             $entity_id = $item->nid; $entity = $item; }
+      elseif (isset($item->tid))        { $entity_type = 'taxonomy_term';    $entity_id = $item->tid; $entity = $item; }
+      elseif (isset($item->item_id))    { $entity_type = 'paragraphs_item';  $entity_id = $item->item_id; $entity = $item; }
+    }
+    if (!$entity || !$entity_type || !$entity_id) {
+      watchdog('ai_search', 'Could not determine or load entity for ID: @id', ['@id' => $id], WATCHDOG_WARNING);
+      continue;
+    }
+
+    if (isset($ai_search_vectors[0]) && is_array($ai_search_vectors[0])) {
+      $ai_search_vectors = array_values(array_filter($ai_search_vectors, function ($row) use ($index, $entity_type, $entity_id) {
+        if (!is_array($row)) {
+          return TRUE;
+        }
+
+        return (($row['index_id'] ?? NULL) !== $index->machine_name)
+          || (($row['entity_type'] ?? NULL) !== $entity_type)
+          || ((int) ($row['entity_id'] ?? 0) !== (int) $entity_id);
+      }));
+    }
+
+    $context_metadata = ai_search_collect_context_metadata($entity_type, $entity_id, $entity, $contextual_fields, $item);
+
+    $cleaned_text = '';
+    if (!empty($context_metadata['title'])) {
+      $cleaned_text = $context_metadata['title'] . "\n\n";
+    }
+
+    foreach ($vector_fields as $vector_field_name) {
+      $cleaned_text = !empty($context_metadata['title']) ? $context_metadata['title'] . "\n\n" : '';
+
+      // All embedding fields use full entity view for consistent extraction.
+      // This ensures all fields get the same quality content extraction regardless of field name.
+      $cleaned_text .= ai_search_render_entity_text($entity_type, $entity_id, $entity, $view_mode);
+
+      $cleaned_text = trim($cleaned_text);
+      if (empty($cleaned_text)) {
+        continue;
+      }
+
+      $vectors = ai_search_convert_embedding($cleaned_text, 'string', 'llm_vector_embedding', $embedding_settings, $vector_field_name, $server);
+
+      foreach ($vectors as $chunk_idx => $entry) {
+        $chunk_vector = $entry['vector'];
+        $chunk_text   = $entry['chunk'];
+        if (!is_array($chunk_vector) || count($chunk_vector) !== (int) $expected_dimension) {
+          watchdog('ai_search', 'Invalid vector size for @field in entity @entity_type/@entity_id (chunk @chunk]', [
+            '@field' => $vector_field_name,
+            '@entity_type' => $entity_type,
+            '@entity_id' => $entity_id,
+            '@chunk' => $chunk_idx,
+          ], WATCHDOG_ERROR);
+          continue;
+        }
+        $ai_search_vectors[] = array_merge([
+          'index_id'    => $index->machine_name,
+          'entity_type' => $entity_type,
+          'entity_id'   => $entity_id,
+          'field_name'  => $vector_field_name,
+          'chunk_index' => $chunk_idx,
+          'vector'      => $chunk_vector,
+          'content'     => $chunk_text,
+        ], $context_metadata);
+      }
+    }
+  }
+}
+
+/**
+ * Processor definition for boosting DB results with AI search.
+ */
+function ai_search_search_api_processor_info() {
+  return [
+    'database_boost_by_ai_search' => [
+      'name' => t('Boost Database by AI Search'),
+      'description' => t('Prepends vector DB results to the traditional database results while respecting filters and facets.'),
+      'class' => 'AISearchDatabaseBoost',
+    ],
+  ];
+}
+
+/**
+ * Alters DB query with AI search IDs when present.
+ */
+function ai_search_search_api_db_query_alter(SelectQueryInterface $query, SearchApiQueryInterface $search_api_query) {
+  $item_ids = $search_api_query->getOption('ai_search_ids');
+  if (!empty($item_ids)) {
+    AISearchDatabaseBoost::queryAlter($query, $item_ids);
+  }
+}
+
+/**
+ * Check whether a given AI API client exposes a specific model id.
+ *
+ * This is a lightweight discovery helper that calls common client methods
+ * (getEmbeddingModels/getModels/listModels/models()->list()] and checks if the
+ * requested model id appears in the response. Returns TRUE if the model is
+ * present, FALSE otherwise.
+ */
+function ai_search_model_exists($api, $model_id) {
+  if (empty($api) || empty($model_id)) {
+    return FALSE;
+  }
+
+  try {
+    $models = NULL;
+    if (is_object($api) && method_exists($api, 'getEmbeddingModels')) {
+      $models = $api->getEmbeddingModels();
+    }
+    elseif (is_object($api) && method_exists($api, 'getModels')) {
+      $models = $api->getModels();
+    }
+    elseif (is_object($api) && method_exists($api, 'listModels')) {
+      $models = $api->listModels();
+    }
+    elseif (is_object($api) && method_exists($api, 'models')) {
+      try {
+        $maybe = $api->models();
+        if (is_object($maybe) && method_exists($maybe, 'list')) {
+          $models = $maybe->list();
+        }
+      }
+      catch (\Exception $e) {
+        // ignore and continue
+      }
+    }
+
+    if (empty($models)) {
+      return FALSE;
+    }
+
+    // Normalize shapes to an array of ids
+    $ids = [];
+    if (is_array($models)) {
+      foreach ($models as $k => $v) {
+        if (is_string($k) && is_string($v)) {
+          $ids[] = $k;
+        }
+        elseif (is_string($v)) {
+          $ids[] = $v;
+        }
+        elseif (is_object($v) && isset($v->id)) {
+          $ids[] = $v->id;
+        }
+        elseif (is_array($v) && isset($v['id'])) {
+          $ids[] = $v['id'];
+        }
+      }
+    }
+    elseif (is_object($models) && isset($models->data) && is_array($models->data)) {
+      foreach ($models->data as $m) {
+        if (is_object($m) && isset($m->id)) {
+          $ids[] = $m->id;
+        }
+        if (is_array($m) && isset($m['id'])) {
+          $ids[] = $m['id'];
+        }
+      }
+    }
+
+    $needle = strtolower((string) $model_id);
+    foreach ($ids as $id) {
+      if (strtolower((string) $id) === $needle) {
+        return TRUE;
+      }
+    }
+  }
+  catch (\Exception $e) {
+    // If model discovery fails, treat as not found rather than noisy fallback.
+    watchdog('ai_search', 'Model discovery check failed: @m', ['@m' => $e->getMessage()], WATCHDOG_DEBUG);
+    return FALSE;
+  }
+
+  return FALSE;
+}
+

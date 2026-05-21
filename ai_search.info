@@ -1,0 +1,6 @@
+name = AI Search
+description = Vector search and embeddings framework for AI-powered content discovery.
+backdrop = 1.x
+type = module
+package = AI
+dependencies[] = ai

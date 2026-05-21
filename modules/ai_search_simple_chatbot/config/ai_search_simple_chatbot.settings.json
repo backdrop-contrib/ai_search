@@ -1,0 +1,22 @@
+{
+    "_config_name": "ai_search_simple_chatbot.settings",
+    "chat_config": {
+        "index": "ai_search",
+        "view": "",
+        "entity_types": [],
+        "no_results_message": "Sorry, I couldn't find what you are looking for.",
+        "error_message": "Sorry, something went wrong. Please try again later.",
+        "no_response_message": "No answer was provided.",
+        "chat_model": "gpt-4o-mini",
+        "temperature": "0.4",
+        "max_tokens": "1024",
+        "chat_system_role": "You are a helpful assistant for a knowledge base. Answer ONLY using the provided context. Prefer more recently published content first.\r\n\r\nWhen you cite a fact, copy the exact anchor tag from the Context (it already includes the correct page title and looks like <a href='URL' class='kb-source'>Node Title</a>) and place it immediately after the sentence it supports.\r\n\r\nDo not invent links, do not change the anchor text, and do not introduce markdown links. Preserve the anchor exactly as provided (including class='kb-source'). Do NOT provide a list of sources at the end.\r\n",
+        "assistant_message": "[context]\r\nPlease use the provided context to answer the user’s question as completely as possible. Cite your sources in-line or at the end, but never generate a list of sources. Never invent, guess, or fabricate sources.\r\n",
+        "user_message": "[user-prompt]\r\nWrite a clear, informative answer in 3–5 sentences using only the context above. Cite sources by copying the exact anchor tag from the context and placing it after the supported sentence. Do NOT add a list of titles, do NOT use phrases like \"Source Documents\". If there is no information, say you don’t have enough info.\r\n",
+        "top_k": "4",
+        "score_threshold": "0.5",
+        "max_length": "1000",
+        "embedding_model": "text-embedding-3-small",
+        "debug": false
+    }
+}

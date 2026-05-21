@@ -1,0 +1,6 @@
+name = AI Search Block
+description = Backdrop block for AI-powered site search.
+backdrop = 1.x
+type = module
+package = AI
+dependencies[] = ai_search

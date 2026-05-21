@@ -1,0 +1,7 @@
+name = AI Search Search Block Log
+description = Provides logging for the AI search block.
+backdrop = 1.x
+type = module
+package = Search
+dependencies[] = ai_search_search_block
+configure = admin/config/ai/search/block-log

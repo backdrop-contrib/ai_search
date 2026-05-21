@@ -1,0 +1,38 @@
+<?php
+
+/**
+ * @file
+ * Tests for Search API AI RAG tools.
+ */
+
+class AiSearchRagToolsTestCase extends BackdropWebTestCase {
+
+  public function setUp() {
+    parent::setUp(['ai_search', 'ai_tools']);
+  }
+
+  public function testRagToolsAreRegistered() {
+    $tools = ai_tools_get_tools();
+
+    $this->assertTrue(isset($tools['ai_search_list_rag_indexes']), 'RAG index list tool is registered.');
+    $this->assertTrue(isset($tools['ai_search_rag_search']), 'RAG search tool is registered.');
+  }
+
+  public function testListRagIndexesReturnsStructuredResult() {
+    $result = ai_search_execute_list_rag_indexes([]);
+
+    $this->assertTrue(is_array($result), 'Index list tool returns an array.');
+    $this->assertTrue(isset($result['count']), 'Index list result has a count.');
+    $this->assertTrue(isset($result['indexes']), 'Index list result has indexes.');
+    $this->assertEqual($result['count'], count($result['indexes']), 'Index count matches returned items.');
+  }
+
+  public function testRagSearchRejectsEmptyQuery() {
+    $result = ai_search_execute_rag_search([
+      'query' => '   ',
+    ]);
+
+    $this->assertTrue(is_array($result), 'Empty-query response is an array.');
+    $this->assertTrue(!empty($result['error']), 'Empty-query response returns an error.');
+  }
+}
