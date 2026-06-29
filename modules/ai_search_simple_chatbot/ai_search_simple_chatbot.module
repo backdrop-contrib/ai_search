@@ -157,9 +157,23 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
 
     $thread_key = 'ai_search_chatbot:' . $form_state['build_info']['args'][0];
     $thread_id = !empty($_SESSION[$thread_key]) ? $_SESSION[$thread_key] : NULL;
-    $assistant_result = ai_assistants_send($chat_config['assistant_id'], $user_query, [
-      'thread_id' => $thread_id,
-    ]);
+    try {
+      $assistant_result = ai_assistants_send($chat_config['assistant_id'], $user_query, [
+        'thread_id' => $thread_id,
+      ]);
+    }
+    catch (\Exception $e) {
+      watchdog_exception('ai_search_simple_chatbot', $e);
+      $error_message = check_plain(!empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.');
+      $_SESSION['ai_search_chat_history'][] = [
+        'question' => $user_query,
+        'answer'   => $error_message,
+        'sources'  => '',
+      ];
+      $form_state['ai_search_stream_last'] = TRUE;
+      $form_state['rebuild'] = TRUE;
+      return;
+    }
     if (!empty($assistant_result['thread_id'])) {
       $_SESSION[$thread_key] = $assistant_result['thread_id'];
     }
@@ -850,7 +864,7 @@ function ai_search_simple_chatbot_block_configure($delta = '') {
       foreach ($servers as $s) {
         if ($s->machine_name === $index->server) { $server = $s; break; }
       }
-      if (ai_search_index_supports_rag($index, $server)) {
+      if ($server && ai_search_index_supports_rag($index, $server)) {
         $form['legacy_rag']['index']['#options'][$index->machine_name] = $index->name;
       }
     }

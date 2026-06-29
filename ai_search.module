@@ -812,7 +812,21 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
     $embedding_strategy = $embedding_settings['embedding_strategy'] ?? [];
   }
   $chunk_size    = !empty($embedding_strategy['chunk_size']) ? (int) $embedding_strategy['chunk_size'] : 500;
-  $chunk_overlap = !empty($embedding_strategy['chunk_overlap']) ? (int) $embedding_strategy['chunk_overlap'] : 100;
+  $chunk_overlap = isset($embedding_strategy['chunk_overlap']) ? (int) $embedding_strategy['chunk_overlap'] : 100;
+  if ($chunk_size <= 0) {
+    $chunk_size = 500;
+  }
+  if ($chunk_overlap < 0) {
+    $chunk_overlap = 0;
+  }
+  if ($chunk_overlap >= $chunk_size) {
+    watchdog('ai_search', 'Invalid chunking config: chunk_overlap (@overlap) must be less than chunk_size (@size). Indexing aborted for @field.', [
+      '@overlap' => $chunk_overlap,
+      '@size'    => $chunk_size,
+      '@field'   => $field_name,
+    ], WATCHDOG_ERROR);
+    return [];
+  }
   $chunks = AITextChunker::chunkText($prepared_text, $chunk_size, $chunk_overlap);
 
   try {
@@ -862,13 +876,21 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
       list(, $model_suffix) = ai_search_parse_model_id($model);
       $check_model = !empty($stripped_model) ? $stripped_model : $model_suffix;
       // Verify that the resolved client actually exposes the requested model.
-      if (!ai_search_model_exists($api_client, $check_model)) {
-        // Model isn't present on the client — don't proceed with fallback.
+      // Only skip when the model is explicitly absent (FALSE); if discovery is
+      // unavailable (NULL) allow the call to proceed rather than blocking valid
+      // embeddings due to a missing listing endpoint.
+      $model_check = ai_search_model_exists($api_client, $check_model);
+      if ($model_check === FALSE) {
         watchdog('ai_search', 'AI client resolved but model @model not found; skipping legacy fallback', ['@model' => $check_model], WATCHDOG_WARNING);
         $api_client = NULL;
       }
       else {
-        watchdog('ai_search', 'Using AI API fallback for model: @model', ['@model' => $model], WATCHDOG_DEBUG);
+        if ($model_check === NULL) {
+          watchdog('ai_search', 'Model discovery unavailable for @model; proceeding with resolved client', ['@model' => $check_model], WATCHDOG_DEBUG);
+        }
+        else {
+          watchdog('ai_search', 'Using AI API fallback for model: @model', ['@model' => $model], WATCHDOG_DEBUG);
+        }
       }
     }
 
@@ -1091,6 +1113,12 @@ function ai_search_form_server_embedding_strategy_validate($form, &$form_state) 
   if (isset($vals['chunk_overlap']) && (!is_numeric($vals['chunk_overlap']) || $vals['chunk_overlap'] < 0)) {
     form_set_error('options][form][embedding_strategy][chunk_overlap', t('Chunk overlap must be a non-negative number.'));
   }
+  if (isset($vals['chunk_size'], $vals['chunk_overlap'])
+    && is_numeric($vals['chunk_size']) && is_numeric($vals['chunk_overlap'])
+    && (int) $vals['chunk_overlap'] >= (int) $vals['chunk_size']
+  ) {
+    form_set_error('options][form][embedding_strategy][chunk_overlap', t('Chunk overlap must be less than chunk size.'));
+  }
 }
 
 
@@ -1196,13 +1224,33 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
   // Fall back to index-level settings for backward compatibility with existing data.
   $server = !empty($index->server) ? search_api_server_load($index->server) : NULL;
   $embedding_settings = [];
-  if ($server && !empty($server->options['embeddings_engine'])) {
-    $embedding_settings = [
-      'embeddings_engine' => $server->options['embeddings_engine'],
-      'embeddings_engine_configuration' => $server->options['embeddings_engine_configuration'] ?? ['dimension' => 1536],
-    ];
+  if ($server) {
+    // Normalize all supported server config shapes into canonical embedding_settings.
+    $engine = NULL;
+    if (!empty($server->options['embeddings_engine'])) {
+      $engine = (string) $server->options['embeddings_engine'];
+    }
+    elseif (!empty($server->options['embeddings_engine_configuration']['engine'])) {
+      $engine = (string) $server->options['embeddings_engine_configuration']['engine'];
+    }
+    elseif (!empty($server->options['embeddings_engine_configuration']['model'])) {
+      $engine = (string) $server->options['embeddings_engine_configuration']['model'];
+    }
+
+    if ($engine !== NULL) {
+      $dimension = !empty($server->options['embeddings_engine_configuration']['dimension'])
+        ? (int) $server->options['embeddings_engine_configuration']['dimension']
+        : (!empty($server->options['dimension']) ? (int) $server->options['dimension'] : 1536);
+      $embedding_settings = [
+        'embeddings_engine'               => $engine,
+        'embeddings_engine_configuration' => array_merge(
+          is_array($server->options['embeddings_engine_configuration'] ?? NULL) ? $server->options['embeddings_engine_configuration'] : [],
+          ['dimension' => $dimension]
+        ),
+      ];
+    }
   }
-  elseif (!empty($index_options['embedding_settings'])) {
+  if (empty($embedding_settings) && !empty($index_options['embedding_settings'])) {
     $embedding_settings = $index_options['embedding_settings'];
   }
   if (!is_array($embedding_settings)) {
@@ -1336,9 +1384,17 @@ function ai_search_search_api_db_query_alter(SelectQueryInterface $query, Search
  * requested model id appears in the response. Returns TRUE if the model is
  * present, FALSE otherwise.
  */
+/**
+ * Check whether a model exists on an API client.
+ *
+ * Returns TRUE  — model confirmed present.
+ *         FALSE — model confirmed absent (list retrieved, model not in it).
+ *         NULL  — discovery unavailable (no listing method, empty list, or
+ *                 exception); caller should not treat this as a hard miss.
+ */
 function ai_search_model_exists($api, $model_id) {
   if (empty($api) || empty($model_id)) {
-    return FALSE;
+    return NULL;
   }
 
   try {
@@ -1365,10 +1421,11 @@ function ai_search_model_exists($api, $model_id) {
     }
 
     if (empty($models)) {
-      return FALSE;
+      // No listing method available or returned nothing — discovery unknown.
+      return NULL;
     }
 
-    // Normalize shapes to an array of ids
+    // Normalize shapes to an array of ids.
     $ids = [];
     if (is_array($models)) {
       foreach ($models as $k => $v) {
@@ -1397,6 +1454,11 @@ function ai_search_model_exists($api, $model_id) {
       }
     }
 
+    if (empty($ids)) {
+      // List came back but we couldn't parse any IDs — treat as unknown.
+      return NULL;
+    }
+
     $needle = strtolower((string) $model_id);
     foreach ($ids as $id) {
       if (strtolower((string) $id) === $needle) {
@@ -1405,11 +1467,12 @@ function ai_search_model_exists($api, $model_id) {
     }
   }
   catch (\Exception $e) {
-    // If model discovery fails, treat as not found rather than noisy fallback.
+    // Discovery request failed — unknown, not a confirmed miss.
     watchdog('ai_search', 'Model discovery check failed: @m', ['@m' => $e->getMessage()], WATCHDOG_DEBUG);
-    return FALSE;
+    return NULL;
   }
 
+  // List retrieved and parsed; model was not in it — confirmed absent.
   return FALSE;
 }
 

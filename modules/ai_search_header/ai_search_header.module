@@ -111,7 +111,7 @@ function ai_search_header_form($form, &$form_state, $destination_path = 'chatbot
   $form['#attributes']['id'] = 'ai-search-header-form';
   
   $form['destination_path'] = array(
-    '#type' => 'hidden',
+    '#type'  => 'value',
     '#value' => $destination_path,
   );
   

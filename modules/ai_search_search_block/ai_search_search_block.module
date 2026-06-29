@@ -1269,10 +1269,10 @@ ARTICLES (Markdown; multiple results are separated by lines):
     if ($accepted >= $max_results) break;
   }
 
-  watchdog('ai_search_search_block', 'Query "@q" retrieved @total rows, accepted @a, rejected @r', ['@q' => $query, '@total' => count($rows), '@a' => $accepted, '@r' => $rejected], WATCHDOG_DEBUG);
+  watchdog('ai_search_search_block', 'Query hash @q retrieved @total rows, accepted @a, rejected @r', ['@q' => substr(hash('sha256', (string) $query), 0, 12), '@total' => count($rows), '@a' => $accepted, '@r' => $rejected], WATCHDOG_DEBUG);
 
   if ($accepted < $min_results) {
-    watchdog('ai_search_search_block', 'RAG: insufficient results (@got < @min) for query "@q".', ['@got' => $accepted, '@min' => $min_results, '@q' => $query], WATCHDOG_NOTICE);
+    watchdog('ai_search_search_block', 'RAG: insufficient results (@got < @min) for query hash @q.', ['@got' => $accepted, '@min' => $min_results, '@q' => substr(hash('sha256', (string) $query), 0, 12)], WATCHDOG_NOTICE);
     return '<p>' . check_plain($no_results_message) . '</p>';
   }
 
