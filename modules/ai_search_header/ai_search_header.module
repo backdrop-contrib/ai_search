@@ -1,0 +1,175 @@
+<?php
+/**
+ * @file
+ * Header search form that redirects to the AI Search page.
+ */
+
+/**
+ * Implements hook_block_info().
+ */
+function ai_search_header_block_info() {
+  $blocks['ai_search_header'] = array(
+    'info' => t('AI Search Header'),
+    'description' => t('A header search form that redirects to the AI Search page and auto-runs the search.'),
+  );
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_configure().
+ */
+function ai_search_header_block_configure($delta = '', $settings = array()) {
+  $form = array();
+  
+  if ($delta == 'ai_search_header') {
+    $form['destination_path'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Destination path'),
+      '#description' => t('Path that contains the AI Search block (e.g. /chatbot or chatbot).'),
+      '#default_value' => isset($settings['destination_path']) ? $settings['destination_path'] : 'chatbot',
+      '#required' => TRUE,
+    );
+  }
+  
+  return $form;
+}
+
+/**
+ * Implements hook_block_save().
+ *
+ * $edit is by reference and Layout saves it afterwards; the return value is
+ * ignored, so normalization must happen in place.
+ */
+function ai_search_header_block_save($delta = '', &$edit = array()) {
+  if ($delta == 'ai_search_header' && isset($edit['destination_path'])) {
+    // Normalize path - remove leading slash.
+    $edit['destination_path'] = ltrim(trim($edit['destination_path']), '/');
+  }
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function ai_search_header_block_view($delta = '', $settings = array()) {
+  $block = array();
+  
+  if ($delta == 'ai_search_header') {
+    $destination = isset($settings['destination_path']) ? $settings['destination_path'] : 'chatbot';
+    
+    // Build the form
+    $form = backdrop_get_form('ai_search_header_form', $destination);
+    
+    // Attach JS and CSS
+    backdrop_add_js(backdrop_get_path('module', 'ai_search_header') . '/js/autorun.js');
+    backdrop_add_css(backdrop_get_path('module', 'ai_search_header') . '/css/header-search.css');
+    
+    // Pass destination to JS
+    backdrop_add_js(array(
+      'ai_search_header' => array(
+        'destination' => $destination,
+      ),
+    ), 'setting');
+    
+    $block['subject'] = '';
+    $block['content'] = array(
+      '#type' => 'container',
+      '#attributes' => array(
+        'class' => array(
+          'search-block-form',
+          'block',
+          'block-search',
+          'block-search-form-block',
+        ),
+        'role' => 'search',
+      ),
+      'content' => array(
+        '#type' => 'container',
+        '#attributes' => array(
+          'class' => array('content', 'container-inline'),
+        ),
+        'form' => $form,
+      ),
+    );
+  }
+  
+  return $block;
+}
+
+/**
+ * Form builder for the AI search header form.
+ */
+function ai_search_header_form($form, &$form_state, $destination_path = 'chatbot') {
+  $form['#method'] = 'post';
+  $form['#action'] = '';
+  
+  // Match core search form classes
+  $form['#attributes']['class'] = array(
+    'search-form',
+    'search-block-form',
+    'form-row',
+  );
+  $form['#attributes']['id'] = 'ai-search-header-form';
+  
+  $form['destination_path'] = array(
+    '#type' => 'hidden',
+    '#value' => $destination_path,
+  );
+  
+  // Search input
+  $form['q'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Search'),
+    '#title_display' => 'invisible',
+    '#maxlength' => 128,
+    '#size' => 15,
+    '#attributes' => array(
+      'class' => array('form-search', 'form-control'),
+      'aria-label' => t('Search'),
+      'title' => t('Enter the terms you wish to search for.'),
+      'placeholder' => t('Search'),
+    ),
+    '#required' => TRUE,
+  );
+  
+  // Actions container
+  $form['actions'] = array(
+    '#type' => 'container',
+    '#attributes' => array(
+      'id' => 'edit-actions',
+      'class' => array('form-actions', 'js-form-wrapper', 'form-wrapper'),
+    ),
+  );
+  
+  // Submit button
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Search'),
+    '#attributes' => array(
+      'class' => array(
+        'button',
+        'js-form-submit',
+        'form-submit',
+        'btn',
+        'btn-primary',
+      ),
+      'style' => 'margin-left:-5px;',
+    ),
+  );
+  
+  return $form;
+}
+
+/**
+ * Submit handler for ai_search_header_form.
+ */
+function ai_search_header_form_submit($form, &$form_state) {
+  $destination = $form_state['values']['destination_path'];
+  $destination = ltrim($destination, '/');
+  $term = trim((string) $form_state['values']['q']);
+
+  // Redirect to the AI search page, carrying the term as ?q. sessionStorage
+  // (set by the capture JS) is the primary channel; the query parameter is
+  // the fallback so the search still auto-runs when storage is unavailable,
+  // and it makes the resulting URL shareable.
+  $form_state['redirect'] = array($destination, array('query' => array('q' => $term)));
+}

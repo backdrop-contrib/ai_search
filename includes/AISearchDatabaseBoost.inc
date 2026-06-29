@@ -50,7 +50,7 @@ class AISearchDatabaseBoost extends SearchApiAbstractProcessor {
       if ($server && in_array($server->class, [
         'ai_search_search', 'search_api_pinecone', 'pinecone', 'search_api_milvus', 'milvus'
       ])) {
-        $options[$index->machine_name] = check_plain($index->name) . ' (' . check_plain($server->name) . ']';
+        $options[$index->machine_name] = check_plain($index->name) . ' (' . check_plain($server->name) . ')';
       }
     }
 

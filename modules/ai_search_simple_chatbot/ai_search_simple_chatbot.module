@@ -150,14 +150,14 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
   $chat_config = config_get('ai_search_simple_chatbot.settings', 'chat_config') ?: [];
   $user_query  = trim($form_state['values']['query']);
 
-  if (!empty($chat_config['assistant_id']) && module_exists('ai_assistant') && function_exists('ai_assistant_send')) {
+  if (!empty($chat_config['assistant_id']) && module_exists('ai_assistants') && function_exists('ai_assistants_send')) {
     if (!isset($_SESSION['ai_search_chat_history'])) {
       $_SESSION['ai_search_chat_history'] = [];
     }
 
     $thread_key = 'ai_search_chatbot:' . $form_state['build_info']['args'][0];
     $thread_id = !empty($_SESSION[$thread_key]) ? $_SESSION[$thread_key] : NULL;
-    $assistant_result = ai_assistant_send($chat_config['assistant_id'], $user_query, [
+    $assistant_result = ai_assistants_send($chat_config['assistant_id'], $user_query, [
       'thread_id' => $thread_id,
     ]);
     if (!empty($assistant_result['thread_id'])) {
@@ -575,7 +575,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     // Prioritize converting any markdown-style links [Title](URL) or [Source](URL)
     // to our canonical anchor tags if the URL matches an allowed source.
     // This handles cases where the LLM ignores system instructions and uses markdown.
-    $ai_response = preg_replace_callback('/\\[([^\\]]+]\\]\\((https?:\\/\\/[^\\]]+]\\]/i', function($m) use ($allowed_source_hrefs, &$used_anchors) {
+    $ai_response = preg_replace_callback('/\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\)]+)\\)/i', function($m) use ($allowed_source_hrefs, &$used_anchors) {
       $label = $m[1];
       $url = $m[2];
       $normalized = rtrim(rawurldecode($url), '/');
@@ -589,7 +589,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     }, $ai_response);
 
     // Use a non-capturing group for inner text since we don't need it here.
-    preg_match_all('/<a\\b[^>]*href=["\']([^"\']+]["\'][^>]*>(?:.*?]<\\/a>/i', $ai_response, $m_anchor_matches);
+    preg_match_all('/<a\\b[^>]*href=["\']([^"\']+)["\'][^>]*>(?:.*?)<\\/a>/i', $ai_response, $m_anchor_matches);
     if (!empty($m_anchor_matches[1])) {
       foreach ($m_anchor_matches[1] as $idx => $href) {
         // Normalize hrefs: decode URL-encoded paths and strip trailing slash
@@ -613,7 +613,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
       // Build a list of allowed href variants (full URL and path-only), normalized
       $allowed_hrefs = [];
       foreach ($used_anchors as $a) {
-        if (preg_match('/href=["\']([^"\']+]["\']/', $a, $mm)) {
+        if (preg_match('/href=["\']([^"\']+)["\']/', $a, $mm)) {
           $full = rtrim($mm[1], '/');
           $allowed_hrefs[] = $full;
           $path = parse_url($mm[1], PHP_URL_PATH);
@@ -625,7 +625,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
       $allowed_hrefs = array_values(array_unique(array_filter($allowed_hrefs)));
 
       // Remove only anchors matching these hrefs to avoid stripping unrelated links.
-      $main_html = preg_replace_callback('/<a\\b[^>]*href=["\']([^"\']+]["\'][^>]*>.*?<\\/a>/i', function($m) use ($allowed_hrefs) {
+      $main_html = preg_replace_callback('/<a\\b[^>]*href=["\']([^"\']+)["\'][^>]*>.*?<\\/a>/i', function($m) use ($allowed_hrefs) {
         $href = $m[1];
         $variants = [];
         $variants[] = rtrim($href, '/');
@@ -647,7 +647,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
 
     // 8b] For all other anchors, if absolute (http/https), replace with the href so it remains as visible text
     $main_html = preg_replace_callback(
-      '/<a\\b[^>]*href=["\'](https?:\\/\\/[^"\']+]["\'][^>]*>.*?<\\/a>/i',
+      '/<a\\b[^>]*href=["\'](https?:\\/\\/[^"\']+)["\'][^>]*>.*?<\\/a>/i',
       function ($m) { return $m[1]; },
       $main_html
     );
@@ -813,7 +813,7 @@ function ai_search_simple_chatbot_block_configure($delta = '') {
     $form['assistant_id'] = [
       '#type'          => 'select',
       '#title'         => t('Assistant'),
-      '#options'       => function_exists('ai_assistant_options') ? ai_assistant_options() : [],
+      '#options'       => function_exists('ai_assistants_options') ? ai_assistants_options() : [],
       '#default_value' => $chat_config['assistant_id'] ?? '',
       '#empty_option'  => t('— Legacy RAG mode —'),
       '#empty_value'   => '',
@@ -1143,7 +1143,7 @@ function _ai_search_simple_chatbot_tool_loop($api_client, $model, array $message
       $result = $api_client->chatWithTools($model, $current_messages, $tools, $temperature, $max_tokens, 'auto', ['operation' => 'chatbot']);
     }
     catch (\Exception $e) {
-      watchdog('ai_search_simple_chatbot', 'chatWithTools error (round @r]: @m', ['@r' => $round, '@m' => $e->getMessage()], WATCHDOG_WARNING);
+      watchdog('ai_search_simple_chatbot', 'chatWithTools error (round @r): @m', ['@r' => $round, '@m' => $e->getMessage()], WATCHDOG_WARNING);
       return NULL;
     }
 
@@ -1239,7 +1239,7 @@ function _ai_search_simple_chatbot_safe_chat($api_client, $model, $messages, $te
       // Detect transient transport/network errors by message content or known exception types.
       $msg = $e->getMessage();
       $isTransient = FALSE;
-      if (preg_match('/(read tcp|wsarecv|connection.*reset|timed out|ETIMEDOUT|ECONNRESET|503|502|504|temporar|reset by peer|connection refused|broken pipe]/i', $msg)) {
+      if (preg_match('/(read tcp|wsarecv|connection.*reset|timed out|ETIMEDOUT|ECONNRESET|503|502|504|temporar|reset by peer|connection refused|broken pipe)/i', $msg)) {
         $isTransient = TRUE;
       }
 
@@ -1249,7 +1249,7 @@ function _ai_search_simple_chatbot_safe_chat($api_client, $model, $messages, $te
       }
 
       // Log and backoff before retrying.
-      watchdog('ai_search_simple_chatbot', 'Transient AI API transport error (attempt @n]: @m', ['@n' => $attempt + 1, '@m' => $msg], WATCHDOG_WARNING);
+      watchdog('ai_search_simple_chatbot', 'Transient AI API transport error (attempt @n): @m', ['@n' => $attempt + 1, '@m' => $msg], WATCHDOG_WARNING);
 
       // Exponential backoff (500ms, 1s, 2s ...)
       $sleep_us = (int) (500000 * pow(2, $attempt));

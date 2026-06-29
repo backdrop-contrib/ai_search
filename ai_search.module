@@ -139,7 +139,7 @@ function ai_search_load_rag_indexes(array $index_ids = []) {
   $items = [];
 
   foreach ($indexes as $index) {
-    if (empty($index) || empty($index->machine_name)) {
+    if (empty($index) || empty($index->machine_name) || !$index->enabled) {
       continue;
     }
     if (!empty($index_ids) && !in_array($index->machine_name, $index_ids, TRUE)) {
@@ -147,7 +147,7 @@ function ai_search_load_rag_indexes(array $index_ids = []) {
     }
 
     $server = !empty($index->server) ? search_api_server_load($index->server) : NULL;
-    if (!ai_search_index_supports_rag($index, $server)) {
+    if (!$server || !$server->enabled || !ai_search_index_supports_rag($index, $server)) {
       continue;
     }
 
@@ -706,11 +706,16 @@ function ai_search_query_backend($server, $index, array $vector, $dimension, $to
  * Query a Pinecone-compatible backend for ai_search RAG.
  */
 function ai_search_query_backend_pinecone($server, $index, array $vector, $dimension, $top_k) {
+  // The provider module autoloads these classes; the explicit loads only
+  // cover edge cases where autoloading has not run yet.
   if (!class_exists('AIPineconeService')) {
-    require_once backdrop_get_path('module', 'ai_search') . '/modules/ai_search_pinecone/includes/AIPineconeService.inc';
+    module_load_include('inc', 'ai_search_pinecone', 'includes/AIPineconeService');
   }
   if (!class_exists('AiSearchPineconeVectorClient')) {
-    require_once backdrop_get_path('module', 'ai_search') . '/modules/ai_search_pinecone/includes/AiSearchPineconeVectorClient.php';
+    module_load_include('php', 'ai_search_pinecone', 'includes/AiSearchPineconeVectorClient');
+  }
+  if (!class_exists('AIPineconeService') || !class_exists('AiSearchPineconeVectorClient')) {
+    throw new \Exception('Pinecone provider classes unavailable. Enable the AI Search Pinecone module.');
   }
 
   $service = new AIPineconeService($server);
@@ -735,11 +740,16 @@ function ai_search_query_backend_pinecone($server, $index, array $vector, $dimen
  * Query a Milvus-compatible backend for ai_search RAG.
  */
 function ai_search_query_backend_milvus($server, $index, array $vector, $dimension, $top_k) {
+  // The provider module autoloads these classes; the explicit loads only
+  // cover edge cases where autoloading has not run yet.
   if (!class_exists('AIMilvusService')) {
-    require_once backdrop_get_path('module', 'ai_search_provider_milvus') . '/includes/AIMilvusService.inc';
+    module_load_include('inc', 'ai_search_milvus', 'includes/AIMilvusService');
   }
   if (!class_exists('AiSearchMilvusVectorClient')) {
-    require_once backdrop_get_path('module', 'ai_search_provider_milvus') . '/includes/AiSearchMilvusVectorClient.php';
+    module_load_include('php', 'ai_search_milvus', 'includes/AiSearchMilvusVectorClient');
+  }
+  if (!class_exists('AIMilvusService') || !class_exists('AiSearchMilvusVectorClient')) {
+    throw new \Exception('Milvus provider classes unavailable. Enable the AI Search Milvus module.');
   }
 
   $service = new AIMilvusService($server);
@@ -985,13 +995,13 @@ function ai_search_form_alter(&$form, &$form_state, $form_id) {
     ];
     $form['options']['form']['embedding_strategy']['chunk_size'] = [
       '#type' => 'textfield',
-      '#title' => t('Maximum chunk size (tokens]'),
+      '#title' => t('Maximum chunk size (tokens)'),
       '#default_value' => $settings['chunk_size'] ?? 500,
       '#description' => t('Maximum chunk size allowed when breaking up larger content.'),
     ];
     $form['options']['form']['embedding_strategy']['chunk_overlap'] = [
       '#type' => 'textfield',
-      '#title' => t('Minimum chunk overlap (tokens]'),
+      '#title' => t('Minimum chunk overlap (tokens)'),
       '#default_value' => $settings['chunk_overlap'] ?? 100,
       '#description' => t('Number of tokens to overlap between chunks.'),
     ];
@@ -1012,14 +1022,14 @@ function ai_search_form_alter(&$form, &$form_state, $form_id) {
 
     <p><em>You should do your own research and come to your own conclusions, but here is some general AI-generated advice:</em></p>
 
-    <h3>Smaller Chunk Size (e.g., 50–100 tokens]</h3>
+    <h3>Smaller Chunk Size (e.g., 50–100 tokens)</h3>
     <ul>
       <li><strong>Use cases:</strong> Highly granular search where detailed segments must be retrievable.</li>
       <li><strong>Advantages:</strong> Increases precision; easier to find specific phrases or concepts.</li>
       <li><strong>Disadvantages:</strong> More chunks → larger DB size and potentially more processing.</li>
     </ul>
 
-    <h3>Larger Chunk Size (e.g., 200–500 tokens]</h3>
+    <h3>Larger Chunk Size (e.g., 200–500 tokens)</h3>
     <ul>
       <li><strong>Use cases:</strong> General search where broader segments are fine.</li>
       <li><strong>Advantages:</strong> Fewer chunks → better storage and search throughput.</li>
@@ -1094,6 +1104,10 @@ function ai_search_embedding_engine_config_form_submit($form, &$form_state) {
 
   $all_engines = ai_search_get_embedding_engine_definitions(NULL, TRUE);
 
+  // Default so the config_set below never references an undefined variable
+  // when the engine class is missing or instantiation fails.
+  $model_name = $selected_engine;
+
   if ($selected_engine && isset($all_engines[$selected_engine])) {
     $engine_class = $all_engines[$selected_engine]['class'];
 
@@ -1158,11 +1172,6 @@ function ai_search_render_entity_text($entity_type, $entity_id, $entity, $view_m
  * Inject embeddings while indexing.
  */
 function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $index) {
-  watchdog('ai_search_debug', 'Hook called for index: @index with @count items', [
-    '@index' => $index->machine_name,
-    '@count' => count($items),
-  ], WATCHDOG_INFO);
-  
   global $ai_search_vectors;
   if (!isset($ai_search_vectors) || !is_array($ai_search_vectors)) {
     $ai_search_vectors = [];
@@ -1274,7 +1283,7 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
         $chunk_vector = $entry['vector'];
         $chunk_text   = $entry['chunk'];
         if (!is_array($chunk_vector) || count($chunk_vector) !== (int) $expected_dimension) {
-          watchdog('ai_search', 'Invalid vector size for @field in entity @entity_type/@entity_id (chunk @chunk]', [
+          watchdog('ai_search', 'Invalid vector size for @field in entity @entity_type/@entity_id (chunk @chunk)', [
             '@field' => $vector_field_name,
             '@entity_type' => $entity_type,
             '@entity_id' => $entity_id,
