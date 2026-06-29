@@ -807,12 +807,15 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
   // Prefer server-level chunking, otherwise index-provided.
   // The form saves under options[form][embedding_strategy]; fall back to the
   // flat options[embedding_strategy] shape for backward compatibility.
+  // When a server exists but defines no strategy, still fall through to the
+  // index/embedding_settings level so legacy configs are not silently ignored.
+  $embedding_strategy = [];
   if ($server) {
     $embedding_strategy = $server->options['form']['embedding_strategy']
       ?? $server->options['embedding_strategy']
       ?? [];
   }
-  else {
+  if (empty($embedding_strategy)) {
     $embedding_strategy = $embedding_settings['embedding_strategy'] ?? [];
   }
   $chunk_size    = !empty($embedding_strategy['chunk_size']) ? (int) $embedding_strategy['chunk_size'] : 500;
@@ -1341,9 +1344,9 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
     foreach ($vector_fields as $vector_field_name) {
       $cleaned_text = !empty($context_metadata['title']) ? $context_metadata['title'] . "\n\n" : '';
 
-      // All embedding fields use full entity view for consistent extraction.
-      // This ensures all fields get the same quality content extraction regardless of field name.
-      $cleaned_text .= ai_search_render_entity_text($entity_type, $entity_id, $entity, $view_mode);
+      // Always use 'full' view mode for embeddings regardless of the index
+      // display setting, so extraction is consistent across all fields.
+      $cleaned_text .= ai_search_render_entity_text($entity_type, $entity_id, $entity, 'full');
 
       $cleaned_text = trim($cleaned_text);
       if (empty($cleaned_text)) {
@@ -1364,7 +1367,7 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
           ], WATCHDOG_ERROR);
           continue;
         }
-        $ai_search_vectors[] = array_merge([
+        $ai_search_vectors[] = array_merge($context_metadata, [
           'index_id'    => $index->machine_name,
           'entity_type' => $entity_type,
           'entity_id'   => $entity_id,
@@ -1372,7 +1375,7 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
           'chunk_index' => $chunk_idx,
           'vector'      => $chunk_vector,
           'content'     => $chunk_text,
-        ], $context_metadata);
+        ]);
       }
     }
   }
@@ -1424,20 +1427,25 @@ function ai_search_model_exists($api, $model_id) {
 
   try {
     $models = NULL;
+    $listing_attempted = FALSE;
     if (is_object($api) && method_exists($api, 'getEmbeddingModels')) {
       $models = $api->getEmbeddingModels();
+      $listing_attempted = TRUE;
     }
     elseif (is_object($api) && method_exists($api, 'getModels')) {
       $models = $api->getModels();
+      $listing_attempted = TRUE;
     }
     elseif (is_object($api) && method_exists($api, 'listModels')) {
       $models = $api->listModels();
+      $listing_attempted = TRUE;
     }
     elseif (is_object($api) && method_exists($api, 'models')) {
       try {
         $maybe = $api->models();
         if (is_object($maybe) && method_exists($maybe, 'list')) {
           $models = $maybe->list();
+          $listing_attempted = TRUE;
         }
       }
       catch (\Exception $e) {
@@ -1446,8 +1454,9 @@ function ai_search_model_exists($api, $model_id) {
     }
 
     if (empty($models)) {
-      // No listing method available or returned nothing — discovery unknown.
-      return NULL;
+      // If a listing method ran and returned empty, the model is definitively absent.
+      // If no recognized method existed, discovery is unknown.
+      return $listing_attempted ? FALSE : NULL;
     }
 
     // Normalize shapes to an array of ids.

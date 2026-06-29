@@ -25,8 +25,13 @@
         var $formEl = $(this);
         $formEl.on('submit', function () {
           var term = ($formEl.find('input[name="q"]').val() || '').trim();
+          // Namespace the storage key by destination so the prefill only applies
+          // to the intended AI Search page and does not leak to unrelated forms.
+          var dest = (settings.ai_search_header && settings.ai_search_header.destination)
+            ? settings.ai_search_header.destination
+            : 'default';
           try {
-            sessionStorage.setItem('ai_search_prefill', term);
+            sessionStorage.setItem('ai_search_prefill:' + dest, term);
           } catch (err) {
             // Storage unavailable (private browsing etc.); the ?q query
             // parameter on the redirect covers this case.
@@ -38,20 +43,30 @@
 
   Backdrop.behaviors.aiSearchHeaderAutoRun = {
     attach: function (context, settings) {
+      // Determine which destination this block serves so we read the matching key.
+      var dest = (settings.ai_search_header && settings.ai_search_header.destination)
+        ? settings.ai_search_header.destination
+        : 'default';
+      var storageKey = 'ai_search_prefill:' + dest;
+
       $('.search-api-ai-search-block-form', context).once('aiSearchHeaderAutoRun', function () {
         var formEl = this;
         var $formEl = $(formEl);
-        
+
         var term = null;
         try {
-          term = sessionStorage.getItem('ai_search_prefill');
+          term = sessionStorage.getItem(storageKey);
+          if (term) {
+            // Consume immediately so no other form on this page reuses it.
+            sessionStorage.removeItem(storageKey);
+          }
         } catch (e) {
           // Storage unavailable; fall through to the ?q parameter.
         }
 
         // Fallback: read ?q from the URL (set by the header form redirect).
         // Also makes /chatbot?q=... links shareable.
-        // Use a page-level flag so only the first form on the page consumes it.
+        // Use a page-level flag so only the first matching form consumes it.
         if (!term) {
           try {
             if (!window._aiSearchQConsumed) {
@@ -86,7 +101,7 @@
           console.warn('AI Search Header: query input not found on AI form.');
           return;
         }
-        
+
         // Check if already auto-run
         if ($formEl.data('ai-autorun-done')) {
           return;
@@ -96,13 +111,6 @@
         // Fill in the search term
         input.value = term;
         $(input).trigger('input').trigger('change');
-
-        // Clear from storage
-        try {
-          sessionStorage.removeItem('ai_search_prefill');
-        } catch (e) {
-          // Ignore; worst case the next visit re-runs the same search.
-        }
 
         // Submit the form
         setTimeout(function() {

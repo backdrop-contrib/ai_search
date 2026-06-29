@@ -153,11 +153,15 @@ function ai_search_search_block_submit_callback() {
 
   $block_id = isset($payload['block_id']) ? trim($payload['block_id']) : '';
 
-  // Hydrate settings from session if available.
-  $settings = [];
-  if (!empty($block_id) && !empty($_SESSION['ai_search_search_block_settings'][$block_id])) {
-    $settings = $_SESSION['ai_search_search_block_settings'][$block_id];
+  // Reject requests with no block context or a block whose session config is
+  // missing — this guards against orphaned/forged requests.
+  if (empty($block_id) || empty($_SESSION['ai_search_search_block_settings'][$block_id])) {
+    backdrop_json_output(['error' => 'Invalid block context.']);
+    exit();
   }
+
+  // Hydrate settings from session.
+  $settings = $_SESSION['ai_search_search_block_settings'][$block_id];
   // For client-side animation, we always want the complete response (no server streaming).
   // The incoming stream flag is ignored on the server and handled client-side.
   $settings['stream'] = FALSE;
