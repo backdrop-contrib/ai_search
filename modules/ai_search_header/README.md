@@ -79,12 +79,10 @@ You can add custom CSS in `css/header-search.css` to further customize the appea
 
 ## JavaScript Console Logs
 
-The module logs helpful debug information:
-- `AI Search Header: Captured search term: [term]`
-- `AI Search Header: Auto-running with term: [term]`
-- `AI Search Header: Clicking submit button` or `Triggering form submit`
+The module emits one browser warning:
+- `AI Search Header: query input not found on AI form.` — logged when the auto-run behavior attaches to a `.search-api-ai-search-block-form` element but cannot find an `input[name="query"]` inside it.
 
-Enable browser console to see these messages for debugging.
+Enable the browser console to see this message for debugging.
 
 ## Credits
 

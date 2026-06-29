@@ -805,8 +805,12 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
   }
 
   // Prefer server-level chunking, otherwise index-provided.
+  // The form saves under options[form][embedding_strategy]; fall back to the
+  // flat options[embedding_strategy] shape for backward compatibility.
   if ($server) {
-    $embedding_strategy = $server->options['embedding_strategy'] ?? [];
+    $embedding_strategy = $server->options['form']['embedding_strategy']
+      ?? $server->options['embedding_strategy']
+      ?? [];
   }
   else {
     $embedding_strategy = $embedding_settings['embedding_strategy'] ?? [];
@@ -857,11 +861,13 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
   if ($provider && $provider !== ai_default_provider_id()) {
     module_load_include('inc', 'ai_search', 'includes/AiSearchBackend');
     if (function_exists('ai_search_load_embeddings_engine')) {
+      $engine_config = is_array($embedding_settings['embeddings_engine_configuration'] ?? NULL)
+        ? $embedding_settings['embeddings_engine_configuration']
+        : [];
+      $engine_config['dimension'] = (int) $expected_dimension;
       $engine_instance = ai_search_load_embeddings_engine([
-        'embeddings_engine' => $model,
-        'embeddings_engine_configuration' => [
-          'dimension' => (int) $expected_dimension,
-        ],
+        'embeddings_engine'               => $model,
+        'embeddings_engine_configuration' => $engine_config,
       ]);
     }
   }
@@ -1001,7 +1007,10 @@ function ai_search_form_alter(&$form, &$form_state, $form_id) {
     // Defaults from saved server on edit or any posted values.
     $server   = isset($form_state['server']) ? $form_state['server'] : NULL;
     $settings = [];
-    if ($server && !empty($server->options['embedding_strategy'])) {
+    if ($server && !empty($server->options['form']['embedding_strategy'])) {
+      $settings = $server->options['form']['embedding_strategy'];
+    }
+    elseif ($server && !empty($server->options['embedding_strategy'])) {
       $settings = $server->options['embedding_strategy'];
     }
     elseif (!empty($form_state['values']['options']['form']['embedding_strategy'])) {
@@ -1281,8 +1290,24 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
   foreach ($items as $id => $item) {
     $entity_type = NULL; $entity_id = NULL; $entity = NULL;
     if (is_string($id) && strpos($id, '/') !== FALSE) {
-      list($entity_type, $entity_id) = explode('/', $id, 2);
-      $entity = entity_load($entity_type, $entity_id);
+      // Handle canonical Search API IDs like "entity:node/123:en" as well as
+      // the legacy "node/123" shape.
+      $raw = $id;
+      if (strncmp($raw, 'entity:', 7) === 0) {
+        $raw = substr($raw, 7);
+      }
+      list($entity_type, $id_part) = explode('/', $raw, 2);
+      // Strip any language/revision suffix (e.g. "123:en" → "123").
+      if (strpos($id_part, ':') !== FALSE) {
+        list($entity_id) = explode(':', $id_part, 2);
+      }
+      else {
+        $entity_id = $id_part;
+      }
+      $entity_id = (int) $entity_id;
+      if ($entity_type && $entity_id) {
+        $entity = entity_load($entity_type, $entity_id);
+      }
     }
     elseif (is_object($item)) {
       if (isset($item->nid))            { $entity_type = 'node';             $entity_id = $item->nid; $entity = $item; }
@@ -1427,7 +1452,18 @@ function ai_search_model_exists($api, $model_id) {
 
     // Normalize shapes to an array of ids.
     $ids = [];
-    if (is_array($models)) {
+    if (is_array($models) && isset($models['data']) && is_array($models['data'])) {
+      // Array envelope: ['data' => [['id' => '...'], ...]]
+      foreach ($models['data'] as $m) {
+        if (is_object($m) && isset($m->id)) {
+          $ids[] = $m->id;
+        }
+        elseif (is_array($m) && isset($m['id'])) {
+          $ids[] = $m['id'];
+        }
+      }
+    }
+    elseif (is_array($models)) {
       foreach ($models as $k => $v) {
         if (is_string($k) && is_string($v)) {
           $ids[] = $k;

@@ -150,6 +150,39 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
   $chat_config = config_get('ai_search_simple_chatbot.settings', 'chat_config') ?: [];
   $user_query  = trim($form_state['values']['query']);
 
+  // Apply input hardening before any routing so all paths share the same guards.
+  $max_len = !empty($chat_config['max_query_length'])
+    ? (int) $chat_config['max_query_length']
+    : (!empty($chat_config['max_length']) ? (int) $chat_config['max_length'] : 1000);
+  if (mb_strlen($user_query) > $max_len) {
+    $user_query = mb_substr($user_query, 0, $max_len);
+  }
+  $deny = [
+    'ignore previous instructions',
+    'system prompt',
+    'developer mode',
+    'dan mode',
+    'override instructions',
+    'repeat the system prompt',
+    'act as',
+  ];
+  foreach ($deny as $needle) {
+    if (stripos($user_query, $needle) !== FALSE) {
+      $error_message = check_plain(!empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, your request could not be processed.');
+      if (!isset($_SESSION['ai_search_chat_history'])) {
+        $_SESSION['ai_search_chat_history'] = [];
+      }
+      $_SESSION['ai_search_chat_history'][] = [
+        'question' => $user_query,
+        'answer'   => $error_message,
+        'sources'  => '',
+      ];
+      $form_state['ai_search_stream_last'] = TRUE;
+      $form_state['rebuild'] = TRUE;
+      return;
+    }
+  }
+
   if (!empty($chat_config['assistant_id']) && module_exists('ai_assistants') && function_exists('ai_assistants_send')) {
     if (!isset($_SESSION['ai_search_chat_history'])) {
       $_SESSION['ai_search_chat_history'] = [];
@@ -195,36 +228,6 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     $form_state['ai_search_stream_last'] = TRUE;
     $form_state['rebuild'] = TRUE;
     return;
-  }
-
-  // Basic input hardening: length cap and simple jailbreak deny-list.
-  $max_len = !empty($chat_config['max_query_length'])
-    ? (int) $chat_config['max_query_length']
-    : (!empty($chat_config['max_length']) ? (int) $chat_config['max_length'] : 1000);
-  if (mb_strlen($user_query) > $max_len) {
-    $user_query = mb_substr($user_query, 0, $max_len);
-  }
-  $deny = [
-    'ignore previous instructions',
-    'system prompt',
-    'developer mode',
-    'dan mode',
-    'override instructions',
-    'repeat the system prompt',
-    'act as',
-  ];
-  foreach ($deny as $needle) {
-    if (stripos($user_query, $needle) !== FALSE) {
-      $error_message = check_plain(!empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, your request could not be processed.');
-      $_SESSION['ai_search_chat_history'][] = [
-        'question' => $user_query,
-        'answer'   => $error_message,
-        'sources'  => '',
-      ];
-      $form_state['ai_search_stream_last'] = TRUE;
-      $form_state['rebuild'] = TRUE;
-      return;
-    }
   }
 
   // Log optional prompt debug details without storing prompt text.
@@ -589,7 +592,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     // Prioritize converting any markdown-style links [Title](URL) or [Source](URL)
     // to our canonical anchor tags if the URL matches an allowed source.
     // This handles cases where the LLM ignores system instructions and uses markdown.
-    $ai_response = preg_replace_callback('/\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\)]+)\\)/i', function($m) use ($allowed_source_hrefs, &$used_anchors) {
+    $ai_response = preg_replace_callback('/\\[([^\\]]+)\\]\\(((?:https?:\\/\\/|\\/)[^\\)]+)\\)/i', function($m) use ($allowed_source_hrefs, &$used_anchors) {
       $label = $m[1];
       $url = $m[2];
       $normalized = rtrim(rawurldecode($url), '/');

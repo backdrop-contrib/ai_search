@@ -51,9 +51,22 @@
 
         // Fallback: read ?q from the URL (set by the header form redirect).
         // Also makes /chatbot?q=... links shareable.
+        // Use a page-level flag so only the first form on the page consumes it.
         if (!term) {
           try {
-            term = new URLSearchParams(window.location.search).get('q');
+            if (!window._aiSearchQConsumed) {
+              term = new URLSearchParams(window.location.search).get('q');
+              if (term) {
+                window._aiSearchQConsumed = true;
+                // Replace the URL without ?q so back/refresh don't re-trigger.
+                try {
+                  var cleanUrl = window.location.pathname + window.location.hash;
+                  window.history.replaceState(null, '', cleanUrl);
+                } catch (e) {
+                  // replaceState unavailable; leave URL as-is.
+                }
+              }
+            }
           } catch (e) {
             term = null;
           }

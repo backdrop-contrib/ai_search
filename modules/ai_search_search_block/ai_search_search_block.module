@@ -151,19 +151,7 @@ function ai_search_search_block_submit_callback() {
     }
   }
 
-  // Persist last query for the response block.
-  $_SESSION['ai_search_search_block_last_query'] = $query;
-
   $block_id = isset($payload['block_id']) ? trim($payload['block_id']) : '';
-
-  // Start logging if the log module is enabled
-  $log_id = NULL;
-  if (module_exists('ai_search_search_block_log')) {
-    $log_config = config_get('ai_search_search_block_log.settings', 'log_enabled');
-    if ($log_config) {
-      $log_id = ai_search_search_block_log_start($block_id, $user->uid, $query);
-    }
-  }
 
   // Hydrate settings from session if available.
   $settings = [];
@@ -174,17 +162,29 @@ function ai_search_search_block_submit_callback() {
   // The incoming stream flag is ignored on the server and handled client-side.
   $settings['stream'] = FALSE;
 
-  // Enforce the configured blocked-words list before doing any retrieval or
-  // LLM work.
+  // Enforce the configured blocked-words list BEFORE persisting the query or
+  // starting a log entry so rejected queries leave no stored trace.
   if (!ai_search_search_block_valid_input($query, $settings)) {
     $blocked_message = !empty($settings['block_response'])
       ? $settings['block_response']
       : t('This question contained blocked words.');
     backdrop_json_output([
       'response' => '<p>' . check_plain($blocked_message) . '</p>',
-      'log_id' => $log_id,
+      'log_id' => NULL,
     ]);
     exit();
+  }
+
+  // Persist last query for the response block.
+  $_SESSION['ai_search_search_block_last_query'] = $query;
+
+  // Start logging if the log module is enabled
+  $log_id = NULL;
+  if (module_exists('ai_search_search_block_log')) {
+    $log_config = config_get('ai_search_search_block_log.settings', 'log_enabled');
+    if ($log_config) {
+      $log_id = ai_search_search_block_log_start($block_id, $user->uid, $query);
+    }
   }
 
   $response = ai_search_search_block_get_response($query, $settings);

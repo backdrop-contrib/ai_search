@@ -157,7 +157,7 @@ function ai_search_header_form($form, &$form_state, $destination_path = 'chatbot
 ## Compatibility Notes
 
 - Backdrop 1.x (PHP 5.6+)
-- Requires ai_search_header module
+- Requires ai_search_search_block module
 - Works with core jQuery and jQuery .once() plugin (included in Backdrop core)
 - Compatible with standard Backdrop layouts and blocks system
 
