@@ -96,7 +96,10 @@ function ai_search_header_block_view($delta = '', $settings = array()) {
   
   if ($delta == 'ai_search_header') {
     $destination = isset($settings['destination_path']) ? $settings['destination_path'] : 'chatbot';
-    
+    // Normalize to match current_path() so the sessionStorage key used by the
+    // capture behavior aligns with the lookup key used by autorun on the dest page.
+    $destination = trim(trim($destination), '/');
+
     // Build the form
     $form = backdrop_get_form('ai_search_header_form', $destination);
     
