@@ -1126,11 +1126,11 @@ function ai_search_form_server_embedding_strategy_validate($form, &$form_state) 
   }
   $vals = $form_state['values']['options']['form']['embedding_strategy'];
 
-  if (isset($vals['chunk_size']) && (!is_numeric($vals['chunk_size']) || $vals['chunk_size'] <= 0)) {
-    form_set_error('options][form][embedding_strategy][chunk_size', t('Chunk size must be a positive number.'));
+  if (isset($vals['chunk_size']) && (!is_numeric($vals['chunk_size']) || $vals['chunk_size'] <= 0 || (float) $vals['chunk_size'] !== (float) (int) $vals['chunk_size'])) {
+    form_set_error('options][form][embedding_strategy][chunk_size', t('Chunk size must be a positive integer.'));
   }
-  if (isset($vals['chunk_overlap']) && (!is_numeric($vals['chunk_overlap']) || $vals['chunk_overlap'] < 0)) {
-    form_set_error('options][form][embedding_strategy][chunk_overlap', t('Chunk overlap must be a non-negative number.'));
+  if (isset($vals['chunk_overlap']) && (!is_numeric($vals['chunk_overlap']) || $vals['chunk_overlap'] < 0 || (float) $vals['chunk_overlap'] !== (float) (int) $vals['chunk_overlap'])) {
+    form_set_error('options][form][embedding_strategy][chunk_overlap', t('Chunk overlap must be a non-negative integer.'));
   }
   if (isset($vals['chunk_size'], $vals['chunk_overlap'])
     && is_numeric($vals['chunk_size']) && is_numeric($vals['chunk_overlap'])
