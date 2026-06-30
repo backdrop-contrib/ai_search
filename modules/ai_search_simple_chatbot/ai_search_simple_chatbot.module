@@ -169,7 +169,11 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     'pretend to be',
     'roleplay as',
   ];
-  $normalized_query = preg_replace('/[\s\-]+/', ' ', $user_query);
+  // Collapse whitespace and any Unicode dash variant (hyphen, non-breaking
+  // hyphen, figure/en/em dash, horizontal bar, minus sign, small/full-width
+  // hyphens) to a single space so "ignore—previous—instructions" is treated
+  // the same as the ASCII form before the deny-list scan.
+  $normalized_query = preg_replace('/[\s\x{2010}-\x{2015}\x{2212}\x{FE58}\x{FE63}\x{FF0D}\-]+/u', ' ', $user_query);
   foreach ($deny as $needle) {
     if (preg_match('/\b' . preg_quote($needle, '/') . '\b/iu', $normalized_query)) {
       $error_message = !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, your request could not be processed.';
