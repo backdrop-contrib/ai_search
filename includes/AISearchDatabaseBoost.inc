@@ -47,9 +47,10 @@ class AISearchDatabaseBoost extends SearchApiAbstractProcessor {
         continue;
       }
       $server = search_api_server_load($index->server);
-      if ($server && in_array($server->class, [
-        'ai_search_search', 'search_api_pinecone', 'pinecone', 'search_api_milvus', 'milvus'
-      ])) {
+      // Offer any index whose backend registers RAG support via
+      // hook_ai_search_rag_backend_info(), rather than hardcoding backend
+      // classes here — that keeps providers (Milvus, Pinecone, …) decoupled.
+      if ($server && ai_search_index_supports_rag($index, $server)) {
         $options[$index->machine_name] = check_plain($index->name) . ' (' . check_plain($server->name) . ')';
       }
     }
