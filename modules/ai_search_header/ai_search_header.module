@@ -60,8 +60,11 @@ function ai_search_header_block_configure($delta = '', $settings = array()) {
  * Element validate callback for the destination_path field.
  */
 function _ai_search_header_validate_destination_path($element, &$form_state) {
-  $value = trim($element['#value']);
-  if (preg_match('#^https?://#i', $value) || strpos($value, '?') !== FALSE || strpos($value, '#') !== FALSE) {
+  $value = trim(trim($element['#value']), '/');
+  if ($value === '') {
+    form_error($element, t('Destination path must not be empty.'));
+  }
+  elseif (preg_match('#^https?://#i', $value) || strpos($value, '?') !== FALSE || strpos($value, '#') !== FALSE) {
     form_error($element, t('Destination path must be a bare internal path (e.g. chatbot). Absolute URLs, query strings, and fragments are not allowed.'));
   }
 }
@@ -77,13 +80,13 @@ function ai_search_header_block_save($delta = '', &$edit = array()) {
     $path = trim($edit['destination_path']);
     // Reject absolute URLs, query strings, and fragments — only bare internal
     // paths are valid so they match current_path() in autorun.js.
-    if (preg_match('#^https?://#i', $path) || strpos($path, '?') !== FALSE || strpos($path, '#') !== FALSE) {
+    $normalized = trim($path, '/');
+    if ($normalized === '' || preg_match('#^https?://#i', $path) || strpos($path, '?') !== FALSE || strpos($path, '#') !== FALSE) {
       // Silently clear to default; form validation should catch this upstream.
       $edit['destination_path'] = 'chatbot';
     }
     else {
-      // Normalize: remove both leading and trailing slashes.
-      $edit['destination_path'] = trim($path, '/');
+      $edit['destination_path'] = $normalized;
     }
   }
 }
@@ -210,8 +213,9 @@ function ai_search_header_form_submit($form, &$form_state) {
   $destination = ltrim($destination, '/');
   $term = trim((string) $form_state['values']['q']);
 
-  // Redirect to the AI search page. sessionStorage (written by the capture JS
-  // before this redirect fires) is the transfer channel; we do not append ?q
-  // by default to avoid exposing the query in URLs, logs, and referrer headers.
-  $form_state['redirect'] = $destination;
+  // sessionStorage (written by the capture JS before this redirect fires) is
+  // the primary transfer channel. ?q is kept as a fallback for private-browsing
+  // contexts where sessionStorage is unavailable; autorun.js prefills but does
+  // not auto-submit URL-sourced terms, so the user must click submit.
+  $form_state['redirect'] = array($destination, array('query' => array('q' => $term)));
 }

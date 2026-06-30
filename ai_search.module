@@ -1352,14 +1352,17 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
       // (e.g. entity:node/123:en vs entity:node/123:fr) are treated as
       // distinct items and only the exact item being re-indexed is removed.
       $canonical_id = $canonical_item_id ?: 'entity:' . $entity_type . '/' . $entity_id;
-      $ai_search_vectors = array_values(array_filter($ai_search_vectors, function ($row) use ($index, $entity_type, $entity_id, $canonical_id) {
+      $base_entity_id = 'entity:' . $entity_type . '/' . $entity_id;
+      $ai_search_vectors = array_values(array_filter($ai_search_vectors, function ($row) use ($index, $entity_type, $entity_id, $canonical_id, $base_entity_id) {
         if (!is_array($row)) {
           return TRUE;
         }
-        // If the row carries a canonical ID, use it for precise matching.
+        // If the row carries a canonical ID, match against both the full
+        // language-suffixed ID and the legacy suffix-free form so old rows
+        // stored as entity:node/123 are removed when reindexing entity:node/123:en.
         if (!empty($row['backdrop_entity_id'])) {
           return (($row['index_id'] ?? NULL) !== $index->machine_name)
-            || ($row['backdrop_entity_id'] !== $canonical_id);
+            || ($row['backdrop_entity_id'] !== $canonical_id && $row['backdrop_entity_id'] !== $base_entity_id);
         }
         return (($row['index_id'] ?? NULL) !== $index->machine_name)
           || (($row['entity_type'] ?? NULL) !== $entity_type)
@@ -1508,7 +1511,7 @@ function ai_search_model_exists($api, $model_id) {
     }
     elseif (is_array($models)) {
       foreach ($models as $k => $v) {
-        if (is_string($k) && is_string($v)) {
+        if (is_string($k)) {
           $ids[] = $k;
         }
         elseif (is_string($v)) {
