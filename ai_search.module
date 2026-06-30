@@ -1377,7 +1377,10 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
           'vector'            => $chunk_vector,
           'content'           => $chunk_text,
           // Canonical Search API item ID for Milvus entity resolution.
-          'backdrop_entity_id' => (string) $id,
+          // Normalize to entity:<type>/<id> if not already in that format.
+          'backdrop_entity_id' => (strncmp((string) $id, 'entity:', 7) === 0)
+            ? (string) $id
+            : 'entity:' . $entity_type . '/' . $entity_id,
           // Deterministic INT64-safe hash for Milvus primary key.
           'backdrop_long_id'  => (int) hexdec(substr(hash('sha256', $id . ':' . $vector_field_name . ':' . $chunk_idx), 0, 15)),
         ]);

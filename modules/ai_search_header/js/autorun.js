@@ -41,6 +41,21 @@
     }
   };
 
+  // Remove only the `q` parameter from the current URL, preserving all others.
+  function removeQParam() {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      if (params.has('q')) {
+        params.delete('q');
+        var qs = params.toString();
+        var cleanUrl = window.location.pathname + (qs ? '?' + qs : '') + window.location.hash;
+        window.history.replaceState(null, '', cleanUrl);
+      }
+    } catch (e) {
+      // replaceState or URLSearchParams unavailable; leave URL as-is.
+    }
+  }
+
   Backdrop.behaviors.aiSearchHeaderAutoRun = {
     attach: function (context, settings) {
       // Determine which destination this block serves so we read the matching key.
@@ -59,6 +74,9 @@
           if (term) {
             // Consume immediately so no other form on this page reuses it.
             sessionStorage.removeItem(storageKey);
+            // Also strip ?q from the URL so refresh doesn't retrigger via
+            // the fallback path, while preserving any other query params.
+            removeQParam();
           }
         } catch (e) {
           // Storage unavailable; fall through to the ?q parameter.
@@ -73,13 +91,8 @@
               term = new URLSearchParams(window.location.search).get('q');
               if (term) {
                 window._aiSearchQConsumed = true;
-                // Replace the URL without ?q so back/refresh don't re-trigger.
-                try {
-                  var cleanUrl = window.location.pathname + window.location.hash;
-                  window.history.replaceState(null, '', cleanUrl);
-                } catch (e) {
-                  // replaceState unavailable; leave URL as-is.
-                }
+                // Remove only ?q, preserving any other query parameters.
+                removeQParam();
               }
             }
           } catch (e) {

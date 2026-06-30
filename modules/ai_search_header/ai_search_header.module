@@ -5,6 +5,19 @@
  */
 
 /**
+ * Implements hook_init().
+ *
+ * Attach autorun.js on every page so the auto-run behavior is available on
+ * the configured destination page even when the header block is not present
+ * there. The JS is self-gating via element selectors and causes no side
+ * effects on pages that lack the relevant forms.
+ */
+function ai_search_header_init() {
+  backdrop_add_js(backdrop_get_path('module', 'ai_search_header') . '/js/autorun.js');
+  backdrop_add_css(backdrop_get_path('module', 'ai_search_header') . '/css/header-search.css');
+}
+
+/**
  * Implements hook_block_info().
  */
 function ai_search_header_block_info() {
