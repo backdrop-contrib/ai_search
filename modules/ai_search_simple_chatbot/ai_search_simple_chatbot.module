@@ -151,9 +151,11 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
   $user_query  = trim($form_state['values']['query']);
 
   // Apply input hardening before any routing so all paths share the same guards.
-  $max_len = !empty($chat_config['max_query_length'])
-    ? (int) $chat_config['max_query_length']
-    : (!empty($chat_config['max_length']) ? (int) $chat_config['max_length'] : 1000);
+  $max_len_raw = isset($chat_config['max_query_length']) ? (int) $chat_config['max_query_length'] : 0;
+  if ($max_len_raw <= 0) {
+    $max_len_raw = isset($chat_config['max_length']) ? (int) $chat_config['max_length'] : 0;
+  }
+  $max_len = $max_len_raw > 0 ? $max_len_raw : 1000;
   if (mb_strlen($user_query) > $max_len) {
     $user_query = mb_substr($user_query, 0, $max_len);
   }
@@ -164,7 +166,8 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     'dan mode',
     'override instructions',
     'repeat the system prompt',
-    'act as',
+    'pretend to be',
+    'roleplay as',
   ];
   foreach ($deny as $needle) {
     if (preg_match('/\b' . preg_quote($needle, '/') . '\b/iu', $user_query)) {

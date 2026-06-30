@@ -63,8 +63,8 @@ function ai_search_header_block_configure($delta = '', $settings = array()) {
  */
 function ai_search_header_block_save($delta = '', &$edit = array()) {
   if ($delta == 'ai_search_header' && isset($edit['destination_path'])) {
-    // Normalize path - remove leading slash.
-    $edit['destination_path'] = ltrim(trim($edit['destination_path']), '/');
+    // Normalize path - remove both leading and trailing slashes.
+    $edit['destination_path'] = trim(trim($edit['destination_path']), '/');
   }
 }
 

@@ -68,15 +68,15 @@
         var formEl = this;
         var $formEl = $(formEl);
 
+        // Read term from sessionStorage without consuming it yet — we only
+        // consume after confirming the form input exists and the value is applied.
         var term = null;
+        var termFromStorage = false;
+        var termFromUrl = false;
         try {
           term = sessionStorage.getItem(storageKey);
           if (term) {
-            // Consume immediately so no other form on this page reuses it.
-            sessionStorage.removeItem(storageKey);
-            // Also strip ?q from the URL so refresh doesn't retrigger via
-            // the fallback path, while preserving any other query params.
-            removeQParam();
+            termFromStorage = true;
           }
         } catch (e) {
           // Storage unavailable; fall through to the ?q parameter.
@@ -90,9 +90,7 @@
             if (!window._aiSearchQConsumed) {
               term = new URLSearchParams(window.location.search).get('q');
               if (term) {
-                window._aiSearchQConsumed = true;
-                // Remove only ?q, preserving any other query parameters.
-                removeQParam();
+                termFromUrl = true;
               }
             }
           } catch (e) {
@@ -105,10 +103,7 @@
 
         if (!term) return;
 
-        // Scroll to the AI search form
-        smoothScrollTo(formEl);
-
-        // Find the query input - Backdrop uses different selectors
+        // Find the query input before consuming any stored state.
         var input = formEl.querySelector('input[name="query"]');
         if (!input) {
           console.warn('AI Search Header: query input not found on AI form.');
@@ -120,6 +115,20 @@
           return;
         }
         $formEl.data('ai-autorun-done', true);
+
+        // Input confirmed — now consume the stored term and clean the URL.
+        if (termFromStorage) {
+          try { sessionStorage.removeItem(storageKey); } catch (e) {}
+          // Strip ?q so a refresh doesn't retrigger via the fallback path.
+          removeQParam();
+        }
+        if (termFromUrl) {
+          window._aiSearchQConsumed = true;
+          removeQParam();
+        }
+
+        // Scroll to the AI search form
+        smoothScrollTo(formEl);
 
         // Fill in the search term
         input.value = term;
