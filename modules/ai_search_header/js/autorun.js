@@ -119,7 +119,6 @@
         // Input confirmed — now consume the stored term and clean the URL.
         if (termFromStorage) {
           try { sessionStorage.removeItem(storageKey); } catch (e) {}
-          // Strip ?q so a refresh doesn't retrigger via the fallback path.
           removeQParam();
         }
         if (termFromUrl) {
@@ -127,12 +126,19 @@
           removeQParam();
         }
 
-        // Scroll to the AI search form
-        smoothScrollTo(formEl);
-
         // Fill in the search term
         input.value = term;
         $(input).trigger('input').trigger('change');
+
+        // Auto-submit only for sessionStorage-originated terms. A ?q value from
+        // the URL (e.g. a manually shared link) prefills the input but lets the
+        // user review and submit intentionally.
+        if (!termFromStorage) {
+          smoothScrollTo(formEl);
+          return;
+        }
+
+        smoothScrollTo(formEl);
 
         // Submit the form
         setTimeout(function() {

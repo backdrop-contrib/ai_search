@@ -186,7 +186,7 @@ function ai_search_search_block_submit_callback() {
       ? $settings['block_response']
       : t('This question contained blocked words.');
     backdrop_json_output([
-      'response' => '<p>' . check_plain($blocked_message) . '</p>',
+      'error' => check_plain($blocked_message),
       'log_id' => NULL,
     ]);
     exit();

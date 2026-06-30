@@ -207,9 +207,8 @@ function ai_search_header_form_submit($form, &$form_state) {
   $destination = ltrim($destination, '/');
   $term = trim((string) $form_state['values']['q']);
 
-  // Redirect to the AI search page, carrying the term as ?q. sessionStorage
-  // (set by the capture JS) is the primary channel; the query parameter is
-  // the fallback so the search still auto-runs when storage is unavailable,
-  // and it makes the resulting URL shareable.
-  $form_state['redirect'] = array($destination, array('query' => array('q' => $term)));
+  // Redirect to the AI search page. sessionStorage (written by the capture JS
+  // before this redirect fires) is the transfer channel; we do not append ?q
+  // by default to avoid exposing the query in URLs, logs, and referrer headers.
+  $form_state['redirect'] = $destination;
 }

@@ -169,8 +169,9 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     'pretend to be',
     'roleplay as',
   ];
+  $normalized_query = preg_replace('/[\s\-]+/', ' ', $user_query);
   foreach ($deny as $needle) {
-    if (preg_match('/\b' . preg_quote($needle, '/') . '\b/iu', $user_query)) {
+    if (preg_match('/\b' . preg_quote($needle, '/') . '\b/iu', $normalized_query)) {
       $error_message = !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, your request could not be processed.';
       if (!isset($_SESSION['ai_search_chat_history'])) {
         $_SESSION['ai_search_chat_history'] = [];

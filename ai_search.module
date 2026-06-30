@@ -1312,12 +1312,17 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
 
   foreach ($items as $id => $item) {
     $entity_type = NULL; $entity_id = NULL; $entity = NULL;
+    $canonical_item_id = NULL;
     if (is_string($id) && strpos($id, '/') !== FALSE) {
       // Handle canonical Search API IDs like "entity:node/123:en" as well as
       // the legacy "node/123" shape.
       $raw = $id;
       if (strncmp($raw, 'entity:', 7) === 0) {
         $raw = substr($raw, 7);
+        $canonical_item_id = (string) $id;
+      }
+      else {
+        $canonical_item_id = 'entity:' . $raw;
       }
       list($entity_type, $id_part) = explode('/', $raw, 2);
       // Strip any language/revision suffix (e.g. "123:en" → "123").
@@ -1346,9 +1351,7 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
       // Normalize the canonical item ID for comparison so language variants
       // (e.g. entity:node/123:en vs entity:node/123:fr) are treated as
       // distinct items and only the exact item being re-indexed is removed.
-      $canonical_id = (strncmp((string) $id, 'entity:', 7) === 0)
-        ? (string) $id
-        : 'entity:' . $entity_type . '/' . $entity_id;
+      $canonical_id = $canonical_item_id ?: 'entity:' . $entity_type . '/' . $entity_id;
       $ai_search_vectors = array_values(array_filter($ai_search_vectors, function ($row) use ($index, $entity_type, $entity_id, $canonical_id) {
         if (!is_array($row)) {
           return TRUE;
@@ -1374,9 +1377,7 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
     foreach ($vector_fields as $vector_field_name) {
       $cleaned_text = !empty($context_metadata['title']) ? $context_metadata['title'] . "\n\n" : '';
 
-      // Always use 'full' view mode for embeddings regardless of the index
-      // display setting, so extraction is consistent across all fields.
-      $cleaned_text .= ai_search_render_entity_text($entity_type, $entity_id, $entity, 'full');
+      $cleaned_text .= ai_search_render_entity_text($entity_type, $entity_id, $entity, $view_mode);
 
       $cleaned_text = trim($cleaned_text);
       if (empty($cleaned_text)) {
@@ -1407,10 +1408,7 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
           'vector'            => $chunk_vector,
           'content'           => $chunk_text,
           // Canonical Search API item ID for Milvus entity resolution.
-          // Normalize to entity:<type>/<id> if not already in that format.
-          'backdrop_entity_id' => (strncmp((string) $id, 'entity:', 7) === 0)
-            ? (string) $id
-            : 'entity:' . $entity_type . '/' . $entity_id,
+          'backdrop_entity_id' => $canonical_item_id ?: 'entity:' . $entity_type . '/' . $entity_id,
           // Deterministic INT64-safe hash for Milvus primary key.
           // Include server_id and index_id so keys stay unique across shared collections.
           'backdrop_long_id'  => (int) hexdec(substr(hash('sha256', ($server ? $server->machine_name : '') . ':' . $index->machine_name . ':' . $id . ':' . $vector_field_name . ':' . $chunk_idx), 0, 15)),
