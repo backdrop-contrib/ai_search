@@ -1502,7 +1502,10 @@ function ai_search_model_exists($api, $model_id) {
     if (is_array($models) && isset($models['data']) && is_array($models['data'])) {
       // Array envelope: ['data' => [['id' => '...'], ...]]
       foreach ($models['data'] as $m) {
-        if (is_object($m) && isset($m->id)) {
+        if (is_string($m)) {
+          $ids[] = $m;
+        }
+        elseif (is_object($m) && isset($m->id)) {
           $ids[] = $m->id;
         }
         elseif (is_array($m) && isset($m['id'])) {
@@ -1539,10 +1542,13 @@ function ai_search_model_exists($api, $model_id) {
     }
     elseif (is_object($models) && isset($models->data) && is_array($models->data)) {
       foreach ($models->data as $m) {
-        if (is_object($m) && isset($m->id)) {
+        if (is_string($m)) {
+          $ids[] = $m;
+        }
+        elseif (is_object($m) && isset($m->id)) {
           $ids[] = $m->id;
         }
-        if (is_array($m) && isset($m['id'])) {
+        elseif (is_array($m) && isset($m['id'])) {
           $ids[] = $m['id'];
         }
       }
