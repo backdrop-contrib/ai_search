@@ -433,7 +433,7 @@ function ai_search_search_block_block_info() {
   $blocks['ai_search_search_block'] = [
     'info' => t('Search API AI Search Block'),
     'description' => t('Provides a search block that uses AI to enhance search results.'),
-    'cache' => BACKDROP_CACHE_PER_ROLE,
+    'cache' => BACKDROP_NO_CACHE,
   ];
 
   $blocks['ai_search_search_block_response'] = [

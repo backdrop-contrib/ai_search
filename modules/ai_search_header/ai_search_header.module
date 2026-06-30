@@ -15,6 +15,13 @@
 function ai_search_header_init() {
   backdrop_add_js(backdrop_get_path('module', 'ai_search_header') . '/js/autorun.js');
   backdrop_add_css(backdrop_get_path('module', 'ai_search_header') . '/css/header-search.css');
+  // Pass current path as destination so the autorun behavior on the dest page
+  // resolves the same namespaced storage key the capture behavior wrote.
+  backdrop_add_js(array(
+    'ai_search_header' => array(
+      'destination' => current_path(),
+    ),
+  ), 'setting');
 }
 
 /**
@@ -120,8 +127,10 @@ function ai_search_header_form($form, &$form_state, $destination_path = 'chatbot
     'search-form',
     'search-block-form',
     'form-row',
+    'ai-search-header-form',
   );
-  $form['#attributes']['id'] = 'ai-search-header-form';
+  // No static #id — Backdrop generates a unique ID per instance, preventing
+  // duplicate IDs when the block is placed more than once.
   
   $form['destination_path'] = array(
     '#type'  => 'value',
@@ -148,7 +157,6 @@ function ai_search_header_form($form, &$form_state, $destination_path = 'chatbot
   $form['actions'] = array(
     '#type' => 'container',
     '#attributes' => array(
-      'id' => 'edit-actions',
       'class' => array('form-actions', 'js-form-wrapper', 'form-wrapper'),
     ),
   );

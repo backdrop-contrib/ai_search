@@ -21,7 +21,7 @@
 
   Backdrop.behaviors.aiSearchHeaderCapture = {
     attach: function (context, settings) {
-      $('form#ai-search-header-form', context).once('aiSearchHeaderCapture', function () {
+      $('form.ai-search-header-form', context).once('aiSearchHeaderCapture', function () {
         var $formEl = $(this);
         $formEl.on('submit', function () {
           var term = ($formEl.find('input[name="q"]').val() || '').trim();

@@ -9,7 +9,7 @@ A Backdrop CMS module that provides a header search form which redirects to an A
 - Redirects to a configured page that contains the AI Search Block
 - Automatically fills in and submits the search to the AI Search Block
 - Uses sessionStorage to pass the query between pages
-- Smooth scrolls to the search results
+- Smooth scrolls to the AI search form before auto-submitting
 
 ## Requirements
 

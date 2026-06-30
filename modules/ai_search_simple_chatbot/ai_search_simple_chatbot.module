@@ -168,7 +168,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
   ];
   foreach ($deny as $needle) {
     if (stripos($user_query, $needle) !== FALSE) {
-      $error_message = check_plain(!empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, your request could not be processed.');
+      $error_message = !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, your request could not be processed.';
       if (!isset($_SESSION['ai_search_chat_history'])) {
         $_SESSION['ai_search_chat_history'] = [];
       }
@@ -197,7 +197,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     }
     catch (\Exception $e) {
       watchdog_exception('ai_search_simple_chatbot', $e);
-      $error_message = check_plain(!empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.');
+      $error_message = !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.';
       $_SESSION['ai_search_chat_history'][] = [
         'question' => $user_query,
         'answer'   => $error_message,
@@ -252,7 +252,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
   if (!$index || empty($index->server)) {
     $_SESSION['ai_search_chat_history'][] = [
       'question' => $user_query,
-      'answer'   => check_plain(!empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.'),
+      'answer'   => !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.',
       'sources'  => '',
     ];
     $form_state['ai_search_stream_last'] = TRUE;
@@ -268,7 +268,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
   if (!$server || !ai_search_index_supports_rag($index, $server)) {
     $_SESSION['ai_search_chat_history'][] = [
       'question' => $user_query,
-      'answer'   => check_plain(!empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.'),
+      'answer'   => !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.',
       'sources'  => '',
     ];
     $form_state['ai_search_stream_last'] = TRUE;
@@ -387,7 +387,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
       }
       $_SESSION['ai_search_chat_history'][] = [
         'question' => $user_query,
-        'answer'   => check_plain($chat_config['error_message'] ?? 'Sorry, something went wrong.'),
+        'answer'   => ['error_message'] ?? 'Sorry, something went wrong.',
         'sources'  => '',
       ];
       $form_state['ai_search_stream_last'] = TRUE;
@@ -401,7 +401,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
 
     if (!ai_search_index_supports_rag($index, $server)) {
       watchdog('ai_search_simple_chatbot', 'This backend is not supported for vector search: @b', ['@b' => $backend_class], WATCHDOG_ERROR);
-      $_SESSION['ai_search_chat_history'][] = [ 'question' => $user_query, 'answer' => check_plain(!empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.'), 'sources' => '' ];
+      $_SESSION['ai_search_chat_history'][] = [ 'question' => $user_query, 'answer' => !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.', 'sources' => '' ];
       $form_state['ai_search_stream_last'] = TRUE;
       $form_state['rebuild'] = TRUE;
       return;
@@ -411,7 +411,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     }
     catch (\Exception $e) {
       watchdog('ai_search_simple_chatbot', 'Error querying backend: @m', ['@m' => $e->getMessage()], WATCHDOG_ERROR);
-      $_SESSION['ai_search_chat_history'][] = [ 'question' => $user_query, 'answer' => check_plain(!empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.'), 'sources' => '' ];
+      $_SESSION['ai_search_chat_history'][] = [ 'question' => $user_query, 'answer' => !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.', 'sources' => '' ];
       $form_state['ai_search_stream_last'] = TRUE;
       $form_state['rebuild'] = TRUE;
       return;
@@ -421,7 +421,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     watchdog_exception('ai_search_simple_chatbot', $e);
     $_SESSION['ai_search_chat_history'][] = [
       'question' => $user_query,
-      'answer'   => check_plain(!empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.'),
+      'answer'   => !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.',
       'sources'  => '',
     ];
     $form_state['ai_search_stream_last'] = TRUE;
@@ -702,7 +702,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     watchdog_exception('ai_search_simple_chatbot', $e);
     $_SESSION['ai_search_chat_history'][] = [
       'question' => $user_query,
-      'answer'   => check_plain(!empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.'),
+      'answer'   => !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.',
       'sources'  => '',
     ];
     $form_state['ai_search_stream_last'] = TRUE;

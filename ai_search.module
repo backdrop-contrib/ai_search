@@ -963,9 +963,16 @@ function ai_search_get_embedding_engine_config(array $embedding_settings) {
     throw new Exception('No embedding engine set in index options.');
   }
   $model = $embedding_settings['embeddings_engine'];
-  $dimension = isset($embedding_settings['embeddings_engine_configuration']['dimension'])
-    ? (int) $embedding_settings['embeddings_engine_configuration']['dimension']
-    : 1536;
+  $raw_dimension = $embedding_settings['embeddings_engine_configuration']['dimension'] ?? NULL;
+  if ($raw_dimension !== NULL) {
+    if (!is_numeric($raw_dimension) || (int) $raw_dimension <= 0) {
+      throw new Exception('Invalid embedding dimension configured: must be a positive integer.');
+    }
+    $dimension = (int) $raw_dimension;
+  }
+  else {
+    $dimension = 1536;
+  }
 
   return [
     'engine' => $model,
@@ -1268,6 +1275,18 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
   if (!is_array($embedding_settings)) {
     $embedding_settings = [];
   }
+  // Final fallback: global config, then the same default as ai_search_rag_index_embedding_model().
+  if (empty($embedding_settings['embeddings_engine'])) {
+    $global_engine = function_exists('config_get') ? trim((string) config_get('ai_search.settings', 'embeddings_engine')) : '';
+    if ($global_engine === '') {
+      $global_engine = 'text-embedding-3-small';
+    }
+    $global_dim = function_exists('config_get') ? (int) config_get('ai_search.settings', 'embeddings_engine_dimension') : 0;
+    $embedding_settings['embeddings_engine'] = $global_engine;
+    if (!isset($embedding_settings['embeddings_engine_configuration']['dimension'])) {
+      $embedding_settings['embeddings_engine_configuration']['dimension'] = $global_dim > 0 ? $global_dim : 1536;
+    }
+  }
 
   $vector_fields = [];
   foreach ($index_options['fields'] as $field_name => $field_info) {
@@ -1323,11 +1342,21 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
     }
 
     if (isset($ai_search_vectors[0]) && is_array($ai_search_vectors[0])) {
-      $ai_search_vectors = array_values(array_filter($ai_search_vectors, function ($row) use ($index, $entity_type, $entity_id) {
+      // Normalize the canonical item ID for comparison so language variants
+      // (e.g. entity:node/123:en vs entity:node/123:fr) are treated as
+      // distinct items and only the exact item being re-indexed is removed.
+      $canonical_id = (strncmp((string) $id, 'entity:', 7) === 0)
+        ? (string) $id
+        : 'entity:' . $entity_type . '/' . $entity_id;
+      $ai_search_vectors = array_values(array_filter($ai_search_vectors, function ($row) use ($index, $entity_type, $entity_id, $canonical_id) {
         if (!is_array($row)) {
           return TRUE;
         }
-
+        // If the row carries a canonical ID, use it for precise matching.
+        if (!empty($row['backdrop_entity_id'])) {
+          return (($row['index_id'] ?? NULL) !== $index->machine_name)
+            || ($row['backdrop_entity_id'] !== $canonical_id);
+        }
         return (($row['index_id'] ?? NULL) !== $index->machine_name)
           || (($row['entity_type'] ?? NULL) !== $entity_type)
           || ((int) ($row['entity_id'] ?? 0) !== (int) $entity_id);
