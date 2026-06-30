@@ -39,12 +39,12 @@
     }
   };
 
-  // Remove only the `q` parameter from the current URL, preserving all others.
+  // Remove only the `ai_q` parameter from the current URL, preserving all others.
   function removeQParam() {
     try {
       var params = new URLSearchParams(window.location.search);
-      if (params.has('q')) {
-        params.delete('q');
+      if (params.has('ai_q')) {
+        params.delete('ai_q');
         var qs = params.toString();
         var cleanUrl = window.location.pathname + (qs ? '?' + qs : '') + window.location.hash;
         window.history.replaceState(null, '', cleanUrl);
@@ -82,13 +82,13 @@
           // Storage unavailable; fall through to the ?q parameter.
         }
 
-        // Fallback: read ?q from the URL (set by the header form redirect).
-        // Also makes /chatbot?q=... links shareable.
+        // Fallback: read ?ai_q from the URL (set by the header form redirect).
+        // Also makes /chatbot?ai_q=... links shareable.
         // Use a page-level flag so only the first matching form consumes it.
         if (!term) {
           try {
             if (!window._aiSearchQConsumed) {
-              term = new URLSearchParams(window.location.search).get('q');
+              term = new URLSearchParams(window.location.search).get('ai_q');
               if (term) {
                 termFromUrl = true;
               }

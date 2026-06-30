@@ -952,6 +952,10 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
       $chunked_vectors[] = [
         'vector' => $vector,
         'chunk'  => $chunk,
+        // Carry the original source-loop index so downstream primary-key hashing
+        // stays stable even when earlier chunks are skipped (empty/invalid) and
+        // the compacted array positions shift.
+        'chunk_index' => $i,
       ];
     }
     catch (\Exception $e) {
@@ -1284,6 +1288,19 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
   if (!is_array($embedding_settings)) {
     $embedding_settings = [];
   }
+  // Legacy indexes may store the engine only in the nested
+  // embeddings_engine_configuration[engine|model] slot. Lift it into the flat
+  // canonical key so the global/default fallback below doesn't override a
+  // configured (but nested) engine and generate vectors with the wrong model.
+  if (empty($embedding_settings['embeddings_engine']) && !empty($embedding_settings['embeddings_engine_configuration'])) {
+    $nested = $embedding_settings['embeddings_engine_configuration'];
+    if (!empty($nested['engine'])) {
+      $embedding_settings['embeddings_engine'] = (string) $nested['engine'];
+    }
+    elseif (!empty($nested['model'])) {
+      $embedding_settings['embeddings_engine'] = (string) $nested['model'];
+    }
+  }
   // Final fallback: global config, then the same default as ai_search_rag_index_embedding_model().
   if (empty($embedding_settings['embeddings_engine'])) {
     $global_engine = function_exists('config_get') ? trim((string) config_get('ai_search.settings', 'embeddings_engine')) : '';
@@ -1399,6 +1416,11 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
       $vectors = ai_search_convert_embedding($cleaned_text, 'string', 'llm_vector_embedding', $embedding_settings, $vector_field_name, $server);
 
       foreach ($vectors as $chunk_idx => $entry) {
+        // Prefer the carried source-loop index so the primary-key hash is stable
+        // against skipped chunks; fall back to the array position for safety.
+        if (isset($entry['chunk_index'])) {
+          $chunk_idx = (int) $entry['chunk_index'];
+        }
         $chunk_vector = $entry['vector'];
         $chunk_text   = $entry['chunk'];
         if (!is_array($chunk_vector) || count($chunk_vector) !== (int) $expected_dimension) {

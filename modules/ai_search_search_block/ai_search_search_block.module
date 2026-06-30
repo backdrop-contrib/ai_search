@@ -126,7 +126,7 @@ function ai_search_search_block_submit_callback() {
     || $raw_stream === 'TRUE');
 
   if ($query === '') {
-    backdrop_json_output(['error' => 'No query provided']);
+    backdrop_json_output(['error' => t('No query provided')]);
     exit();
   }
 
@@ -146,7 +146,7 @@ function ai_search_search_block_submit_callback() {
   ];
   foreach ($deny as $needle) {
     if (stripos($query, $needle) !== FALSE) {
-      backdrop_json_output(['error' => 'Query rejected.']);
+      backdrop_json_output(['error' => t('Query rejected.')]);
       exit();
     }
   }
@@ -157,7 +157,7 @@ function ai_search_search_block_submit_callback() {
   // Reject requests with no block context or a block whose session config is
   // missing — this guards against orphaned/forged requests.
   if (empty($block_id) || empty($_SESSION['ai_search_search_block_settings'][$block_id])) {
-    backdrop_json_output(['error' => 'Invalid block context.']);
+    backdrop_json_output(['error' => t('Invalid block context.')]);
     exit();
   }
 
@@ -167,7 +167,7 @@ function ai_search_search_block_submit_callback() {
     ? $_SESSION['ai_search_search_block_nonce'][$block_id]
     : '';
   if ($request_nonce === '' || $expected_nonce === '' || !hash_equals($expected_nonce, $request_nonce)) {
-    backdrop_json_output(['error' => 'Invalid request token.']);
+    backdrop_json_output(['error' => t('Invalid request token.')]);
     exit();
   }
 

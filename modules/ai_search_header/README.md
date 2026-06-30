@@ -33,13 +33,13 @@ A Backdrop CMS module that provides a header search form which redirects to an A
 ## How It Works
 
 1. User enters a search term in the header search form
-2. On submit, the term is stored in sessionStorage and carried on the redirect as ?q (fallback)
+2. On submit, the term is stored in sessionStorage and carried on the redirect as ?ai_q (fallback)
 3. User is redirected to the AI Search page
-4. JavaScript detects the search term, preferring sessionStorage and falling back to the ?q parameter
+4. JavaScript detects the search term, preferring sessionStorage and falling back to the ?ai_q parameter
 5. The term is filled into the AI Search Block query field
 6. Submission depends on the source:
    - **sessionStorage** (came from the header form): the AI Search Block form is submitted automatically
-   - **?q only** (e.g. a manually shared `/chatbot?q=...` link): the field is prefilled but left for the user to submit intentionally
+   - **?ai_q only** (e.g. a manually shared `/chatbot?ai_q=...` link): the field is prefilled but left for the user to submit intentionally
 7. User sees both AI results and database search results
 8. Page smoothly scrolls to show the results
 

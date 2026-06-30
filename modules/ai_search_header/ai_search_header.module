@@ -214,8 +214,10 @@ function ai_search_header_form_submit($form, &$form_state) {
   $term = trim((string) $form_state['values']['q']);
 
   // sessionStorage (written by the capture JS before this redirect fires) is
-  // the primary transfer channel. ?q is kept as a fallback for private-browsing
-  // contexts where sessionStorage is unavailable; autorun.js prefills but does
-  // not auto-submit URL-sourced terms, so the user must click submit.
-  $form_state['redirect'] = array($destination, array('query' => array('q' => $term)));
+  // the primary transfer channel. ?ai_q is kept as a fallback for private-
+  // browsing contexts where sessionStorage is unavailable; autorun.js prefills
+  // but does not auto-submit URL-sourced terms, so the user must click submit.
+  // The param is intentionally NOT named "q": that key is reserved for Backdrop
+  // routing and collides when clean URLs are disabled.
+  $form_state['redirect'] = array($destination, array('query' => array('ai_q' => $term)));
 }
