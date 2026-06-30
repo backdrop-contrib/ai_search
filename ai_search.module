@@ -1510,7 +1510,18 @@ function ai_search_model_exists($api, $model_id) {
       }
     }
     elseif (is_array($models)) {
-      foreach ($models as $k => $v) {
+      $candidate_models = $models;
+      foreach (['models', 'items', 'results'] as $envelope_key) {
+        if (isset($models[$envelope_key]) && is_array($models[$envelope_key])) {
+          $candidate_models = $models[$envelope_key];
+          break;
+        }
+      }
+      $metadata_keys = ['data', 'models', 'items', 'results', 'object', 'has_more', 'next', 'next_page'];
+      foreach ($candidate_models as $k => $v) {
+        if ($candidate_models === $models && is_string($k) && in_array($k, $metadata_keys, TRUE)) {
+          continue;
+        }
         if (is_string($k)) {
           $ids[] = $k;
         }
