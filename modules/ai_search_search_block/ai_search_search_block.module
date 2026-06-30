@@ -202,6 +202,8 @@ function ai_search_search_block_submit_callback() {
   }
 
   // Case 1: Provider returned a streaming-capable object (Drupal-style wrappers).
+  // NOTE: $is_stream is forced FALSE above; this branch is intentionally
+  // unreachable and retained only for future server-side streaming support.
   if ($is_stream && is_object($response) && !empty($response->isStream)) {
     backdrop_page_is_cacheable(FALSE);
     backdrop_page_header();
@@ -233,6 +235,8 @@ function ai_search_search_block_submit_callback() {
   }
 
   // Case 2: Manual streaming of a non-iterable response.
+  // NOTE: $is_stream is forced FALSE above; this branch is intentionally
+  // unreachable and retained only for future server-side streaming support.
   if ($is_stream) {
     backdrop_page_is_cacheable(FALSE);
     backdrop_page_header();
