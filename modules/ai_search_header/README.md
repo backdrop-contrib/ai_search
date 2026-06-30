@@ -18,7 +18,7 @@ A Backdrop CMS module that provides a header search form which redirects to an A
 
 ## Installation
 
-1. This module ships as a submodule of ai_search (modules/contrib/ai_search/modules/ai_search_header)
+1. This module ships as a submodule of ai_search (`modules/ai_search_header`)
 2. Enable the module: `bee pm-enable ai_search_header`
 3. Or enable via the UI at `admin/modules`
 
@@ -53,7 +53,7 @@ You can add custom CSS in `css/header-search.css` to further customize the appea
 
 ## Technical Details
 
-- **Form ID**: `ai-search-header-form`
+- **Form class**: `.ai-search-header-form` (no fixed ID — Backdrop generates a unique ID per instance)
 - **Input name**: `q` (matches web standards)
 - **Storage**: Uses browser sessionStorage (cleared after use)
 - **JavaScript behaviors**:

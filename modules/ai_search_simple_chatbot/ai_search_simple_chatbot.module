@@ -186,12 +186,29 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     }
   }
 
+  if (!empty($chat_config['assistant_id']) && (!module_exists('ai_assistants') || !function_exists('ai_assistants_send'))) {
+    // assistant_id is configured but the required module is unavailable — fail
+    // explicitly rather than silently falling through to the legacy RAG path.
+    watchdog('ai_search_simple_chatbot', 'assistant_id is configured but the ai_assistants module is not available.', [], WATCHDOG_ERROR);
+    if (!isset($_SESSION['ai_search_chat_history'])) {
+      $_SESSION['ai_search_chat_history'] = [];
+    }
+    $_SESSION['ai_search_chat_history'][] = [
+      'question' => $user_query,
+      'answer'   => !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.',
+      'sources'  => '',
+    ];
+    $form_state['ai_search_stream_last'] = TRUE;
+    $form_state['rebuild'] = TRUE;
+    return;
+  }
+
   if (!empty($chat_config['assistant_id']) && module_exists('ai_assistants') && function_exists('ai_assistants_send')) {
     if (!isset($_SESSION['ai_search_chat_history'])) {
       $_SESSION['ai_search_chat_history'] = [];
     }
 
-    $thread_key = 'ai_search_chatbot:' . $form_state['build_info']['args'][0];
+    $thread_key = 'ai_search_chatbot:' . $form_state['build_info']['args'][0] . ':' . $chat_config['assistant_id'];
     $thread_id = !empty($_SESSION[$thread_key]) ? $_SESSION[$thread_key] : NULL;
     try {
       $assistant_result = ai_assistants_send($chat_config['assistant_id'], $user_query, [
@@ -280,7 +297,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
   }
 
   // 2] Get chat model config
-  $chat_model = $chat_config['chat_model'] ?? 'gpt-4';
+  $chat_model = !empty($chat_config['chat_model']) ? $chat_config['chat_model'] : 'gpt-4';
 
   // Determine embedding model: prefer server options (canonical), then chatbot config.
   $embedding_model = !empty($server->options['embeddings_engine'])

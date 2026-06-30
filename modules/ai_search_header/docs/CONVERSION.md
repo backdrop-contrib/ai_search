@@ -78,7 +78,7 @@ backdrop = 1.x
 (function ($, Backdrop) {
   Backdrop.behaviors.aiSearchHeaderCapture = {
     attach: function (context, settings) {
-      $('form#ai-search-header-form', context).once('aiSearchHeaderCapture', function () {
+      $('form.ai-search-header-form', context).once('aiSearchHeaderCapture', function () {
         var $formEl = $(this);
         ...
       });

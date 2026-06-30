@@ -352,6 +352,10 @@
                     setStatusMessage('AI response ready.');
                   }
                 });
+              } else if (data && data.error) {
+                $out.html('<p>' + $('<span>').text(data.error).html() + '</p>');
+                setBusyState($out, false);
+                setStatusMessage(data.error);
               } else {
                 $out.html('<p>No response.</p>');
                 setBusyState($out, false);

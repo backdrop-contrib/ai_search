@@ -46,13 +46,24 @@ function ai_search_header_block_configure($delta = '', $settings = array()) {
     $form['destination_path'] = array(
       '#type' => 'textfield',
       '#title' => t('Destination path'),
-      '#description' => t('Path that contains the AI Search block (e.g. /chatbot or chatbot).'),
+      '#description' => t('Internal path to the page containing the AI Search block (e.g. chatbot). Absolute URLs, query strings, and fragments are not allowed.'),
       '#default_value' => isset($settings['destination_path']) ? $settings['destination_path'] : 'chatbot',
       '#required' => TRUE,
+      '#element_validate' => array('_ai_search_header_validate_destination_path'),
     );
   }
   
   return $form;
+}
+
+/**
+ * Element validate callback for the destination_path field.
+ */
+function _ai_search_header_validate_destination_path($element, &$form_state) {
+  $value = trim($element['#value']);
+  if (preg_match('#^https?://#i', $value) || strpos($value, '?') !== FALSE || strpos($value, '#') !== FALSE) {
+    form_error($element, t('Destination path must be a bare internal path (e.g. chatbot). Absolute URLs, query strings, and fragments are not allowed.'));
+  }
 }
 
 /**
@@ -63,8 +74,17 @@ function ai_search_header_block_configure($delta = '', $settings = array()) {
  */
 function ai_search_header_block_save($delta = '', &$edit = array()) {
   if ($delta == 'ai_search_header' && isset($edit['destination_path'])) {
-    // Normalize path - remove both leading and trailing slashes.
-    $edit['destination_path'] = trim(trim($edit['destination_path']), '/');
+    $path = trim($edit['destination_path']);
+    // Reject absolute URLs, query strings, and fragments — only bare internal
+    // paths are valid so they match current_path() in autorun.js.
+    if (preg_match('#^https?://#i', $path) || strpos($path, '?') !== FALSE || strpos($path, '#') !== FALSE) {
+      // Silently clear to default; form validation should catch this upstream.
+      $edit['destination_path'] = 'chatbot';
+    }
+    else {
+      // Normalize: remove both leading and trailing slashes.
+      $edit['destination_path'] = trim($path, '/');
+    }
   }
 }
 

@@ -1412,7 +1412,8 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
             ? (string) $id
             : 'entity:' . $entity_type . '/' . $entity_id,
           // Deterministic INT64-safe hash for Milvus primary key.
-          'backdrop_long_id'  => (int) hexdec(substr(hash('sha256', $id . ':' . $vector_field_name . ':' . $chunk_idx), 0, 15)),
+          // Include server_id and index_id so keys stay unique across shared collections.
+          'backdrop_long_id'  => (int) hexdec(substr(hash('sha256', ($server ? $server->machine_name : '') . ':' . $index->machine_name . ':' . $id . ':' . $vector_field_name . ':' . $chunk_idx), 0, 15)),
         ]);
       }
     }
