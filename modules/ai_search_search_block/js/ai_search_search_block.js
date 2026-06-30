@@ -356,6 +356,8 @@
                 $out.html('<p>' + $('<span>').text(data.error).html() + '</p>');
                 setBusyState($out, false);
                 setStatusMessage(data.error);
+                dispatchStatusEvent('error', { response: data, form: $form[0] });
+                return;
               } else {
                 $out.html('<p>No response.</p>');
                 setBusyState($out, false);

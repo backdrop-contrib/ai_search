@@ -123,6 +123,8 @@
         }
         if (termFromUrl) {
           window._aiSearchQConsumed = true;
+          // Clean the transient ?q from the address bar after consuming it.
+          removeQParam();
         }
 
         // Fill in the search term
