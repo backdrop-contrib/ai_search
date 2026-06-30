@@ -1,0 +1,6 @@
+name = AI Search Header
+description = Header search form that redirects to the AI Search page with ?q and auto-runs the AI search block.
+type = module
+backdrop = 1.x
+package = AI
+dependencies[] = ai_search_search_block

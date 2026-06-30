@@ -1,0 +1,223 @@
+<?php
+/**
+ * @file
+ * Header search form that redirects to the AI Search page.
+ */
+
+/**
+ * Implements hook_init().
+ *
+ * Attach autorun.js on every page so the auto-run behavior is available on
+ * the configured destination page even when the header block is not present
+ * there. The JS is self-gating via element selectors and causes no side
+ * effects on pages that lack the relevant forms.
+ */
+function ai_search_header_init() {
+  backdrop_add_js(backdrop_get_path('module', 'ai_search_header') . '/js/autorun.js');
+  backdrop_add_css(backdrop_get_path('module', 'ai_search_header') . '/css/header-search.css');
+  // Pass current page path separately so autorun can resolve the correct
+  // namespaced sessionStorage key without conflicting with the per-block
+  // destination value set during block rendering.
+  backdrop_add_js(array(
+    'ai_search_header' => array(
+      'page_path' => current_path(),
+    ),
+  ), 'setting');
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function ai_search_header_block_info() {
+  $blocks['ai_search_header'] = array(
+    'info' => t('AI Search Header'),
+    'description' => t('A header search form that redirects to the AI Search page and auto-runs the search.'),
+  );
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_configure().
+ */
+function ai_search_header_block_configure($delta = '', $settings = array()) {
+  $form = array();
+  
+  if ($delta == 'ai_search_header') {
+    $form['destination_path'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Destination path'),
+      '#description' => t('Internal path to the page containing the AI Search block (e.g. chatbot). Absolute URLs, query strings, and fragments are not allowed.'),
+      '#default_value' => isset($settings['destination_path']) ? $settings['destination_path'] : 'chatbot',
+      '#required' => TRUE,
+      '#element_validate' => array('_ai_search_header_validate_destination_path'),
+    );
+  }
+  
+  return $form;
+}
+
+/**
+ * Element validate callback for the destination_path field.
+ */
+function _ai_search_header_validate_destination_path($element, &$form_state) {
+  $value = trim(trim($element['#value']), '/');
+  if ($value === '') {
+    form_error($element, t('Destination path must not be empty.'));
+  }
+  elseif (preg_match('#^https?://#i', $value) || strpos($value, '?') !== FALSE || strpos($value, '#') !== FALSE) {
+    form_error($element, t('Destination path must be a bare internal path (e.g. chatbot). Absolute URLs, query strings, and fragments are not allowed.'));
+  }
+}
+
+/**
+ * Implements hook_block_save().
+ *
+ * $edit is by reference and Layout saves it afterwards; the return value is
+ * ignored, so normalization must happen in place.
+ */
+function ai_search_header_block_save($delta = '', &$edit = array()) {
+  if ($delta == 'ai_search_header' && isset($edit['destination_path'])) {
+    $path = trim($edit['destination_path']);
+    // Reject absolute URLs, query strings, and fragments — only bare internal
+    // paths are valid so they match current_path() in autorun.js.
+    $normalized = trim($path, '/');
+    if ($normalized === '' || preg_match('#^https?://#i', $path) || strpos($path, '?') !== FALSE || strpos($path, '#') !== FALSE) {
+      // Silently clear to default; form validation should catch this upstream.
+      $edit['destination_path'] = 'chatbot';
+    }
+    else {
+      $edit['destination_path'] = $normalized;
+    }
+  }
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function ai_search_header_block_view($delta = '', $settings = array()) {
+  $block = array();
+  
+  if ($delta == 'ai_search_header') {
+    $destination = isset($settings['destination_path']) ? $settings['destination_path'] : 'chatbot';
+    // Normalize to match current_path() so the sessionStorage key used by the
+    // capture behavior aligns with the lookup key used by autorun on the dest page.
+    $destination = trim(trim($destination), '/');
+
+    // Build the form
+    $form = backdrop_get_form('ai_search_header_form', $destination);
+    
+    // Attach JS and CSS
+    backdrop_add_js(backdrop_get_path('module', 'ai_search_header') . '/js/autorun.js');
+    backdrop_add_css(backdrop_get_path('module', 'ai_search_header') . '/css/header-search.css');
+    
+    // Destination is passed via data-ai-search-destination on the form element
+    // so each block instance carries its own value without overwriting the
+    // global page_path key set in hook_init().
+    
+    $block['subject'] = '';
+    $block['content'] = array(
+      '#type' => 'container',
+      '#attributes' => array(
+        'class' => array(
+          'search-block-form',
+          'block',
+          'block-search',
+          'block-search-form-block',
+        ),
+        'role' => 'search',
+      ),
+      'content' => array(
+        '#type' => 'container',
+        '#attributes' => array(
+          'class' => array('content', 'container-inline'),
+        ),
+        'form' => $form,
+      ),
+    );
+  }
+  
+  return $block;
+}
+
+/**
+ * Form builder for the AI search header form.
+ */
+function ai_search_header_form($form, &$form_state, $destination_path = 'chatbot') {
+  $form['#method'] = 'post';
+  $form['#action'] = '';
+  
+  // Match core search form classes
+  $form['#attributes']['class'] = array(
+    'search-form',
+    'search-block-form',
+    'form-row',
+    'ai-search-header-form',
+  );
+  $form['#attributes']['data-ai-search-destination'] = $destination_path;
+  // No static #id — Backdrop generates a unique ID per instance, preventing
+  // duplicate IDs when the block is placed more than once.
+  
+  $form['destination_path'] = array(
+    '#type'  => 'value',
+    '#value' => $destination_path,
+  );
+  
+  // Search input
+  $form['q'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Search'),
+    '#title_display' => 'invisible',
+    '#maxlength' => 128,
+    '#size' => 15,
+    '#attributes' => array(
+      'class' => array('form-search', 'form-control'),
+      'aria-label' => t('Search'),
+      'title' => t('Enter the terms you wish to search for.'),
+      'placeholder' => t('Search'),
+    ),
+    '#required' => TRUE,
+  );
+  
+  // Actions container
+  $form['actions'] = array(
+    '#type' => 'container',
+    '#attributes' => array(
+      'class' => array('form-actions', 'js-form-wrapper', 'form-wrapper'),
+    ),
+  );
+  
+  // Submit button
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Search'),
+    '#attributes' => array(
+      'class' => array(
+        'button',
+        'js-form-submit',
+        'form-submit',
+        'btn',
+        'btn-primary',
+      ),
+      'style' => 'margin-left:-5px;',
+    ),
+  );
+  
+  return $form;
+}
+
+/**
+ * Submit handler for ai_search_header_form.
+ */
+function ai_search_header_form_submit($form, &$form_state) {
+  $destination = $form_state['values']['destination_path'];
+  $destination = ltrim($destination, '/');
+  $term = trim((string) $form_state['values']['q']);
+
+  // sessionStorage (written by the capture JS before this redirect fires) is
+  // the primary transfer channel. ?ai_q is kept as a fallback for private-
+  // browsing contexts where sessionStorage is unavailable; autorun.js prefills
+  // but does not auto-submit URL-sourced terms, so the user must click submit.
+  // The param is intentionally NOT named "q": that key is reserved for Backdrop
+  // routing and collides when clean URLs are disabled.
+  $form_state['redirect'] = array($destination, array('query' => array('ai_q' => $term)));
+}
