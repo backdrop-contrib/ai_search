@@ -123,7 +123,6 @@
         }
         if (termFromUrl) {
           window._aiSearchQConsumed = true;
-          removeQParam();
         }
 
         // Fill in the search term
