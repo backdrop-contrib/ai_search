@@ -162,8 +162,10 @@ function ai_search_search_block_submit_callback() {
 
   // Hydrate settings from session.
   $settings = $_SESSION['ai_search_search_block_settings'][$block_id];
-  // For client-side animation, we always want the complete response (no server streaming).
-  // The incoming stream flag is ignored on the server and handled client-side.
+  // For client-side animation, streaming is handled client-side; force both
+  // the payload flag and the settings key off so all downstream branching
+  // consistently uses the non-streaming (JSON) path.
+  $is_stream = FALSE;
   $settings['stream'] = FALSE;
 
   // Enforce the configured blocked-words list BEFORE persisting the query or

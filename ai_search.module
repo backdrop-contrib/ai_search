@@ -1368,13 +1368,18 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
           continue;
         }
         $ai_search_vectors[] = array_merge($context_metadata, [
-          'index_id'    => $index->machine_name,
-          'entity_type' => $entity_type,
-          'entity_id'   => $entity_id,
-          'field_name'  => $vector_field_name,
-          'chunk_index' => $chunk_idx,
-          'vector'      => $chunk_vector,
-          'content'     => $chunk_text,
+          'index_id'          => $index->machine_name,
+          'server_id'         => $server ? $server->machine_name : '',
+          'entity_type'       => $entity_type,
+          'entity_id'         => $entity_id,
+          'field_name'        => $vector_field_name,
+          'chunk_index'       => $chunk_idx,
+          'vector'            => $chunk_vector,
+          'content'           => $chunk_text,
+          // Canonical Search API item ID for Milvus entity resolution.
+          'backdrop_entity_id' => (string) $id,
+          // Deterministic INT64-safe hash for Milvus primary key.
+          'backdrop_long_id'  => (int) hexdec(substr(hash('sha256', $id . ':' . $vector_field_name . ':' . $chunk_idx), 0, 15)),
         ]);
       }
     }
@@ -1427,25 +1432,20 @@ function ai_search_model_exists($api, $model_id) {
 
   try {
     $models = NULL;
-    $listing_attempted = FALSE;
     if (is_object($api) && method_exists($api, 'getEmbeddingModels')) {
       $models = $api->getEmbeddingModels();
-      $listing_attempted = TRUE;
     }
     elseif (is_object($api) && method_exists($api, 'getModels')) {
       $models = $api->getModels();
-      $listing_attempted = TRUE;
     }
     elseif (is_object($api) && method_exists($api, 'listModels')) {
       $models = $api->listModels();
-      $listing_attempted = TRUE;
     }
     elseif (is_object($api) && method_exists($api, 'models')) {
       try {
         $maybe = $api->models();
         if (is_object($maybe) && method_exists($maybe, 'list')) {
           $models = $maybe->list();
-          $listing_attempted = TRUE;
         }
       }
       catch (\Exception $e) {
@@ -1454,9 +1454,11 @@ function ai_search_model_exists($api, $model_id) {
     }
 
     if (empty($models)) {
-      // If a listing method ran and returned empty, the model is definitively absent.
-      // If no recognized method existed, discovery is unknown.
-      return $listing_attempted ? FALSE : NULL;
+      // An empty or missing listing is always treated as unknown — a provider
+      // may return an empty list for reasons unrelated to model absence (e.g.
+      // pagination, permissions). Only a non-empty list that lacks the model
+      // is a confirmed miss.
+      return NULL;
     }
 
     // Normalize shapes to an array of ids.
