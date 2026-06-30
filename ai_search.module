@@ -1413,8 +1413,9 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
           // Canonical Search API item ID for Milvus entity resolution.
           'backdrop_entity_id' => $canonical_item_id ?: 'entity:' . $entity_type . '/' . $entity_id,
           // Deterministic INT64-safe hash for Milvus primary key.
-          // Include server_id and index_id so keys stay unique across shared collections.
-          'backdrop_long_id'  => (int) hexdec(substr(hash('sha256', ($server ? $server->machine_name : '') . ':' . $index->machine_name . ':' . $id . ':' . $vector_field_name . ':' . $chunk_idx), 0, 15)),
+          // Derived from the same canonical ID as backdrop_entity_id so delete
+          // and hash paths stay consistent across legacy and canonical item IDs.
+          'backdrop_long_id'  => (int) hexdec(substr(hash('sha256', ($server ? $server->machine_name : '') . ':' . $index->machine_name . ':' . ($canonical_item_id ?: 'entity:' . $entity_type . '/' . $entity_id) . ':' . $vector_field_name . ':' . $chunk_idx), 0, 15)),
         ]);
       }
     }
