@@ -868,10 +868,19 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
         ? $embedding_settings['embeddings_engine_configuration']
         : [];
       $engine_config['dimension'] = (int) $expected_dimension;
-      $engine_instance = ai_search_load_embeddings_engine([
-        'embeddings_engine'               => $model,
-        'embeddings_engine_configuration' => $engine_config,
-      ]);
+      try {
+        $engine_instance = ai_search_load_embeddings_engine([
+          'embeddings_engine'               => $model,
+          'embeddings_engine_configuration' => $engine_config,
+        ]);
+      }
+      catch (\Exception $e) {
+        watchdog('ai_search', 'Failed to load embeddings engine for @model: @msg', [
+          '@model' => $model,
+          '@msg'   => $e->getMessage(),
+        ], WATCHDOG_WARNING);
+        // Fall through to the AI API client fallback below.
+      }
     }
   }
 
@@ -1560,8 +1569,12 @@ function ai_search_model_exists($api, $model_id) {
     }
 
     $needle = strtolower((string) $model_id);
+    // Strip provider prefix (e.g. "provider:model" → "model") for comparison.
+    $needle_stripped = strpos($needle, ':') !== FALSE ? substr($needle, strpos($needle, ':') + 1) : $needle;
     foreach ($ids as $id) {
-      if (strtolower((string) $id) === $needle) {
+      $id_lower = strtolower((string) $id);
+      $id_stripped = strpos($id_lower, ':') !== FALSE ? substr($id_lower, strpos($id_lower, ':') + 1) : $id_lower;
+      if ($id_lower === $needle || $id_stripped === $needle_stripped) {
         return TRUE;
       }
     }

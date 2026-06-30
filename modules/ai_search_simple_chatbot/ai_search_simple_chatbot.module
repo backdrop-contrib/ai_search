@@ -201,6 +201,8 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
       'answer'   => !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.',
       'sources'  => '',
     ];
+    $form_state['input']['query']  = '';
+    $form_state['values']['query'] = '';
     $form_state['ai_search_stream_last'] = TRUE;
     $form_state['rebuild'] = TRUE;
     return;
@@ -226,6 +228,8 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
         'answer'   => $error_message,
         'sources'  => '',
       ];
+      $form_state['input']['query']  = '';
+      $form_state['values']['query'] = '';
       $form_state['ai_search_stream_last'] = TRUE;
       $form_state['rebuild'] = TRUE;
       return;
@@ -631,7 +635,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     }, $ai_response);
 
     // Use a non-capturing group for inner text since we don't need it here.
-    preg_match_all('/<a\\b[^>]*href=["\']([^"\']+)["\'][^>]*>(?:.*?)<\\/a>/i', $ai_response, $m_anchor_matches);
+    preg_match_all('/<a\\b[^>]*href=["\']([^"\']+)["\'][^>]*>(?:.*?)<\\/a>/is', $ai_response, $m_anchor_matches);
     if (!empty($m_anchor_matches[1])) {
       foreach ($m_anchor_matches[1] as $idx => $href) {
         // Normalize hrefs: decode URL-encoded paths and strip trailing slash
