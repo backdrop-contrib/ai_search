@@ -25,11 +25,9 @@
         var $formEl = $(this);
         $formEl.on('submit', function () {
           var term = ($formEl.find('input[name="q"]').val() || '').trim();
-          // Namespace the storage key by destination so the prefill only applies
-          // to the intended AI Search page and does not leak to unrelated forms.
-          var dest = (settings.ai_search_header && settings.ai_search_header.destination)
-            ? settings.ai_search_header.destination
-            : 'default';
+          // Read destination from the per-form data attribute so each block
+          // instance uses its own configured path as the storage namespace.
+          var dest = $formEl.attr('data-ai-search-destination') || 'default';
           try {
             sessionStorage.setItem('ai_search_prefill:' + dest, term);
           } catch (err) {
@@ -58,9 +56,11 @@
 
   Backdrop.behaviors.aiSearchHeaderAutoRun = {
     attach: function (context, settings) {
-      // Determine which destination this block serves so we read the matching key.
-      var dest = (settings.ai_search_header && settings.ai_search_header.destination)
-        ? settings.ai_search_header.destination
+      // Use the current page path as the storage key — it matches what the
+      // capture behavior wrote when the user submitted on a page whose block
+      // destination pointed here.
+      var dest = (settings.ai_search_header && settings.ai_search_header.page_path)
+        ? settings.ai_search_header.page_path
         : 'default';
       var storageKey = 'ai_search_prefill:' + dest;
 

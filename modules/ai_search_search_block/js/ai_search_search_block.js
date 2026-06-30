@@ -302,6 +302,7 @@
           var stream = (String($form.find('input[name="stream"]').val()).toLowerCase() === 'true') && streamDefault;
           var $btn   = $form.find('input[type="submit"], button[type="submit"]').first();
           var blockId = $form.find('input[name="block_id"]').val() || '';
+          var nonce  = $form.find('input[name="_nonce"]').val() || '';
 
           if (!query) return false;
 
@@ -321,7 +322,7 @@
             url: submitUrl,
             type: 'POST',
             dataType: 'json',
-            data: { query: query, stream: 0, block_id: blockId },
+            data: { query: query, stream: 0, block_id: blockId, _nonce: nonce },
             success: function (data) {
               //  cfg.enable_database_results);
 

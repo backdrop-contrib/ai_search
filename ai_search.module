@@ -965,7 +965,7 @@ function ai_search_get_embedding_engine_config(array $embedding_settings) {
   $model = $embedding_settings['embeddings_engine'];
   $raw_dimension = $embedding_settings['embeddings_engine_configuration']['dimension'] ?? NULL;
   if ($raw_dimension !== NULL) {
-    if (!is_numeric($raw_dimension) || (int) $raw_dimension <= 0) {
+    if (!is_numeric($raw_dimension) || (int) $raw_dimension <= 0 || (float) $raw_dimension !== (float) (int) $raw_dimension) {
       throw new Exception('Invalid embedding dimension configured: must be a positive integer.');
     }
     $dimension = (int) $raw_dimension;
@@ -1281,7 +1281,8 @@ function ai_search_search_api_index_items_alter(array &$items, SearchApiIndex $i
     if ($global_engine === '') {
       $global_engine = 'text-embedding-3-small';
     }
-    $global_dim = function_exists('config_get') ? (int) config_get('ai_search.settings', 'embeddings_engine_dimension') : 0;
+    $global_engine_config = function_exists('config_get') ? config_get('ai_search.settings', 'embeddings_engine_configuration') : [];
+    $global_dim = isset($global_engine_config['dimension']) ? (int) $global_engine_config['dimension'] : 0;
     $embedding_settings['embeddings_engine'] = $global_engine;
     if (!isset($embedding_settings['embeddings_engine_configuration']['dimension'])) {
       $embedding_settings['embeddings_engine_configuration']['dimension'] = $global_dim > 0 ? $global_dim : 1536;

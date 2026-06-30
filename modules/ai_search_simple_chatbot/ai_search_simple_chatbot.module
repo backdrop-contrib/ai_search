@@ -167,7 +167,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     'act as',
   ];
   foreach ($deny as $needle) {
-    if (stripos($user_query, $needle) !== FALSE) {
+    if (preg_match('/\b' . preg_quote($needle, '/') . '\b/iu', $user_query)) {
       $error_message = !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, your request could not be processed.';
       if (!isset($_SESSION['ai_search_chat_history'])) {
         $_SESSION['ai_search_chat_history'] = [];
@@ -387,7 +387,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
       }
       $_SESSION['ai_search_chat_history'][] = [
         'question' => $user_query,
-        'answer'   => ['error_message'] ?? 'Sorry, something went wrong.',
+        'answer'   => !empty($chat_config['error_message']) ? $chat_config['error_message'] : 'Sorry, something went wrong.',
         'sources'  => '',
       ];
       $form_state['ai_search_stream_last'] = TRUE;

@@ -152,11 +152,22 @@ function ai_search_search_block_submit_callback() {
   }
 
   $block_id = isset($payload['block_id']) ? trim($payload['block_id']) : '';
+  $request_nonce = isset($payload['_nonce']) ? (string) $payload['_nonce'] : '';
 
   // Reject requests with no block context or a block whose session config is
   // missing — this guards against orphaned/forged requests.
   if (empty($block_id) || empty($_SESSION['ai_search_search_block_settings'][$block_id])) {
     backdrop_json_output(['error' => 'Invalid block context.']);
+    exit();
+  }
+
+  // Validate CSRF nonce to confirm the request came from a form rendered in
+  // this session, not a cross-site forged request.
+  $expected_nonce = isset($_SESSION['ai_search_search_block_nonce'][$block_id])
+    ? $_SESSION['ai_search_search_block_nonce'][$block_id]
+    : '';
+  if ($request_nonce === '' || $expected_nonce === '' || !hash_equals($expected_nonce, $request_nonce)) {
+    backdrop_json_output(['error' => 'Invalid request token.']);
     exit();
   }
 
@@ -876,6 +887,12 @@ function ai_search_search_block_block_view($delta = '', $settings = []) {
     }
     $_SESSION['ai_search_search_block_settings'][$block_id] = $form_settings;
 
+    // Generate a per-session nonce so the submit callback can verify the
+    // request originated from this rendered form.
+    $nonce = backdrop_get_token('ai_search_search_block:' . $block_id);
+    $_SESSION['ai_search_search_block_nonce'][$block_id] = $nonce;
+    $form_settings['_nonce'] = $nonce;
+
     $block['content'] = backdrop_get_form('ai_search_search_block_form', $form_settings);
 
     // Attach scripts + settings to the CONTENT.
@@ -965,6 +982,13 @@ function ai_search_search_block_form($form, &$form_state, $ai_settings = []) {
   $form['block_id'] = [
     '#type'  => 'hidden',
     '#value' => !empty($ai_settings['block_id']) ? $ai_settings['block_id'] : '',
+  ];
+
+  // CSRF nonce: validated in the submit callback to confirm this request
+  // originated from a form rendered in this session.
+  $form['_nonce'] = [
+    '#type'  => 'hidden',
+    '#value' => !empty($ai_settings['_nonce']) ? $ai_settings['_nonce'] : '',
   ];
 
   // Query field.

@@ -15,11 +15,12 @@
 function ai_search_header_init() {
   backdrop_add_js(backdrop_get_path('module', 'ai_search_header') . '/js/autorun.js');
   backdrop_add_css(backdrop_get_path('module', 'ai_search_header') . '/css/header-search.css');
-  // Pass current path as destination so the autorun behavior on the dest page
-  // resolves the same namespaced storage key the capture behavior wrote.
+  // Pass current page path separately so autorun can resolve the correct
+  // namespaced sessionStorage key without conflicting with the per-block
+  // destination value set during block rendering.
   backdrop_add_js(array(
     'ai_search_header' => array(
-      'destination' => current_path(),
+      'page_path' => current_path(),
     ),
   ), 'setting');
 }
@@ -83,12 +84,9 @@ function ai_search_header_block_view($delta = '', $settings = array()) {
     backdrop_add_js(backdrop_get_path('module', 'ai_search_header') . '/js/autorun.js');
     backdrop_add_css(backdrop_get_path('module', 'ai_search_header') . '/css/header-search.css');
     
-    // Pass destination to JS
-    backdrop_add_js(array(
-      'ai_search_header' => array(
-        'destination' => $destination,
-      ),
-    ), 'setting');
+    // Destination is passed via data-ai-search-destination on the form element
+    // so each block instance carries its own value without overwriting the
+    // global page_path key set in hook_init().
     
     $block['subject'] = '';
     $block['content'] = array(
@@ -129,6 +127,7 @@ function ai_search_header_form($form, &$form_state, $destination_path = 'chatbot
     'form-row',
     'ai-search-header-form',
   );
+  $form['#attributes']['data-ai-search-destination'] = $destination_path;
   // No static #id — Backdrop generates a unique ID per instance, preventing
   // duplicate IDs when the block is placed more than once.
   
