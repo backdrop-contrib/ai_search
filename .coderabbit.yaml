@@ -19,13 +19,11 @@ reviews:
   poem: false
   review_status: false
 
-  # Skip generated, vendored, and non-source files entirely.
+  # Skip only generated, vendored, and non-source assets. JS and template PHP
+  # (.tpl.php) stay in scope — they carry real XSS/rendering risk worth review.
   path_filters:
     - "!**/vendor/**"
     - "!**/*.css"
-    - "!**/*.js"
-    - "!**/templates/**"
-    - "!**/*.tpl.php"
     - "!**/LICENSE.txt"
     - "!**/config/*.json"
     - "!resources/**"

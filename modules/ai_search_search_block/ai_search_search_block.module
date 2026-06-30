@@ -117,7 +117,7 @@ function ai_search_search_block_submit_callback() {
   }
 
   // Inputs.
-  $query = isset($payload['query']) ? trim($payload['query']) : '';
+  $query = (isset($payload['query']) && is_scalar($payload['query'])) ? trim((string) $payload['query']) : '';
   $raw_stream = isset($payload['stream']) ? $payload['stream'] : NULL;
   $is_stream = ($raw_stream === TRUE
     || $raw_stream === 1
@@ -151,8 +151,8 @@ function ai_search_search_block_submit_callback() {
     }
   }
 
-  $block_id = isset($payload['block_id']) ? trim($payload['block_id']) : '';
-  $request_nonce = isset($payload['_nonce']) ? (string) $payload['_nonce'] : '';
+  $block_id = (isset($payload['block_id']) && is_scalar($payload['block_id'])) ? trim((string) $payload['block_id']) : '';
+  $request_nonce = (isset($payload['_nonce']) && is_scalar($payload['_nonce'])) ? (string) $payload['_nonce'] : '';
 
   // Reject requests with no block context or a block whose session config is
   // missing — this guards against orphaned/forged requests.
@@ -300,8 +300,8 @@ function ai_search_search_block_db_results_callback() {
     $payload = $_POST;
   }
 
-  $query = isset($payload['query']) ? trim($payload['query']) : '';
-  $block_id = isset($payload['block_id']) ? trim($payload['block_id']) : '';
+  $query = (isset($payload['query']) && is_scalar($payload['query'])) ? trim((string) $payload['query']) : '';
+  $block_id = (isset($payload['block_id']) && is_scalar($payload['block_id'])) ? trim((string) $payload['block_id']) : '';
   $page = isset($payload['page']) ? max(0, (int) $payload['page']) : 0;
 
   // Validate block_id

@@ -1455,14 +1455,6 @@ function ai_search_search_api_db_query_alter(SelectQueryInterface $query, Search
 }
 
 /**
- * Check whether a given AI API client exposes a specific model id.
- *
- * This is a lightweight discovery helper that calls common client methods
- * (getEmbeddingModels/getModels/listModels/models()->list()] and checks if the
- * requested model id appears in the response. Returns TRUE if the model is
- * present, FALSE otherwise.
- */
-/**
  * Check whether a model exists on an API client.
  *
  * Returns TRUE  — model confirmed present.
