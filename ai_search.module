@@ -259,6 +259,18 @@ function ai_search_get_embedding_dimension() {
 }
 
 /**
+ * Return the API key configured for the legacy AI API fallback.
+ *
+ * Reads the key name from ai.settings and resolves it via the Key module,
+ * returning NULL when no key is configured so callers can consistently
+ * guard against a missing/unset key without repeating the lookup pattern.
+ */
+function ai_search_get_configured_api_key() {
+  $key_name = config_get('ai.settings', 'api_key');
+  return !empty($key_name) ? key_get_key_value($key_name) : NULL;
+}
+
+/**
  * Return non-vector index fields that should be treated as contextual metadata.
  */
 function ai_search_get_contextual_fields(array $index_options) {
@@ -1140,8 +1152,7 @@ function ai_search_embedding_engine_config_form_submit($form, &$form_state) {
 
     if (class_exists($engine_class)) {
       try {
-        $api_key_name = config_get('ai.settings', 'api_key');
-        $api_key = key_get_key_value($api_key_name);
+        $api_key = ai_search_get_configured_api_key();
         if (!$api_key) {
           throw new Exception('AI API key is missing.');
         }

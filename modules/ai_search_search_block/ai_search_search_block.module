@@ -582,9 +582,7 @@ function ai_search_search_block_block_configure($delta = '', $settings = []) {
     '#collapsed' => TRUE,
   ];
 
-  $ai_config = config('ai.settings');
-  $ai_api_key_name = $ai_config->get('api_key');
-  $apiKey = !empty($ai_api_key_name) ? key_get_key_value($ai_api_key_name) : NULL;
+  $apiKey = ai_search_get_configured_api_key();
 
   // Cache the model list for 1 hour to avoid slow API calls during form build.
   $cache_id = 'ai_search_search_block_model_list';
@@ -1342,7 +1340,7 @@ ARTICLES (Markdown; multiple results are separated by lines):
     }
     else {
       // Fallback to AI API directly.
-      $api_key = key_get_key_value(config('ai.settings')->get('api_key'));
+      $api_key = ai_search_get_configured_api_key();
       if (empty($api_key)) {
         return '<p><em>' . check_plain(t('AI API key is not configured.')) . '</em></p>';
       }
