@@ -679,10 +679,6 @@ function ai_search_query_backend($server, $index, array $vector, $dimension, $to
 }
 
 /**
- * Convert text to embedding vectors (main conversion function).
- * Uses compatibility helpers to resolve AI API clients when needed.
- */
-/**
  * Prepend whatever task-specific prefix this embedding model requires.
  *
  * Some embedding models (nomic-embed-text is the first known case) are
@@ -753,6 +749,10 @@ function ai_search_apply_embedding_task_prefix($text, $model, $mode) {
   return $text;
 }
 
+/**
+ * Convert text to embedding vectors (main conversion function).
+ * Uses compatibility helpers to resolve AI API clients when needed.
+ */
 function ai_search_convert_embedding($value, $original_type, $type, array $embedding_settings, $field_name = 'unknown_field', $server = NULL) {
   if ($type !== 'llm_vector_embedding' || !is_string($value)) {
     watchdog('ai_search', 'Bad embedding conversion call: type=@type, is_string=@is_string', [
