@@ -704,8 +704,15 @@ function ai_search_query_backend($server, $index, array $vector, $dimension, $to
 function ai_search_apply_embedding_task_prefix($text, $model, $mode) {
   $model = (string) $model;
   $quirks = module_invoke_all('ai_embedding_model_quirks');
+  // module_invoke_all() merges results keyed by pattern in arbitrary hook
+  // registration order. Sort patterns longest-first so a specific pattern
+  // (e.g. "nomic-embed-text") always wins over a broader one (e.g. "embed")
+  // that happens to also match the model string.
+  uksort($quirks, function ($a, $b) {
+    return mb_strlen((string) $b) - mb_strlen((string) $a);
+  });
   foreach ($quirks as $pattern => $quirk) {
-    if (stripos($model, $pattern) === FALSE) {
+    if ($pattern === '' || stripos($model, $pattern) === FALSE) {
       continue;
     }
     $key = ($mode === 'query') ? 'query_prefix' : 'document_prefix';
@@ -880,6 +887,9 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
     $api_client->recordLog('embedding_start', $model, ['text_len' => strlen($prepared_text)], NULL, TRUE, 0);
   }
 
+  // Prefix is identical for every chunk (same model + document mode); resolve once.
+  $document_prefix = ai_search_apply_embedding_task_prefix('', $model, 'document');
+
   $chunked_vectors = [];
   foreach ($chunks as $i => $chunk) {
     $chunk_clean = AIStringHelper::prepareText($chunk);
@@ -887,7 +897,7 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
       continue;
     }
     try {
-      $chunk_for_embedding = ai_search_apply_embedding_task_prefix($chunk_clean, $model, 'document');
+      $chunk_for_embedding = $document_prefix . $chunk_clean;
       if ($engine_instance) {
         $vector = $engine_instance->generateEmbeddings($chunk_for_embedding);
       }

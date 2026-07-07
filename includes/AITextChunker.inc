@@ -75,9 +75,12 @@ class AITextChunker {
       $chunks[] = trim($chunk);
 
       // Remove our chunk, keeping our minimum overlap, again breaking at whitespace.
+      // If $chunk has no whitespace to break on (e.g. a long unbroken token), fall
+      // back to advancing past the whole chunk minus overlap so we always make
+      // forward progress instead of looping on the same text forever.
       $remainingText = mb_substr(
         $remainingText,
-        self::getLastWhitespacePosition($chunk, -$minOverlap) ?: -$minOverlap
+        self::getLastWhitespacePosition($chunk, -$minOverlap) ?: max(mb_strlen($chunk) - $minOverlap, 1)
       );
     }
 

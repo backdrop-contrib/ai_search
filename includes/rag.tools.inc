@@ -63,7 +63,7 @@ function ai_search_rag_tools() {
                 'items' => [
                   'type' => 'string',
                 ],
-                'description' => 'Optional entity types to filter by, such as node or taxonomy_term.',
+                'description' => 'Optional entity types to filter by. Accepts either the Backdrop entity type (e.g. node, taxonomy_term) or a bundle/content type name (e.g. person, faq).',
               ],
             ],
             'required' => ['query'],
