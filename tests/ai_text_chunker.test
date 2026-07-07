@@ -60,10 +60,13 @@ class AITextChunkerTestCase extends BackdropUnitTestCase {
   public function testChunkTextByTokensClampsOverlapAtOrAboveMaxTokens() {
     $text = str_repeat('word ', 200);
 
+    // Every overlapTokens value at or above maxTokens (5) should clamp to the
+    // same effective overlap (maxTokens - 1 = 4 tokens), so each case must
+    // produce the exact same, deterministic chunk count.
+    $expectedChunkCount = count(AITextChunker::chunkTextByTokens($text, 5, 4));
     foreach ([5, 6, 50] as $overlapTokens) {
       $chunks = AITextChunker::chunkTextByTokens($text, 5, $overlapTokens);
-      $this->assertTrue(count($chunks) > 1, "Overlap of $overlapTokens tokens (>= maxTokens) still produces multiple chunks instead of looping.");
-      $this->assertTrue(count($chunks) < 10000, "Overlap of $overlapTokens tokens does not runaway-loop.");
+      $this->assertEqual($expectedChunkCount, count($chunks), "Overlap of $overlapTokens tokens (>= maxTokens) clamps to the same chunk count as the maximum allowed overlap.");
     }
   }
 
