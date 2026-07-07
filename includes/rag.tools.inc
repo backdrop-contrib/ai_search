@@ -352,6 +352,13 @@ function ai_search_rag_extract_sources($server, $index, $vector_results, $score_
       // raw entity type meant any bundle-style filter silently zeroed out
       // every result. Accept either.
       $bundle = !empty($metadata['type']) ? (string) $metadata['type'] : '';
+      // Some indexes don't store the bundle in metadata; fall back to
+      // deriving it from the already-loaded entity so bundle-style filters
+      // still work in that case.
+      if ($bundle === '' && !empty($resolved['entity'])) {
+        list(, , $loaded_bundle) = entity_extract_ids($entity_type, $resolved['entity']);
+        $bundle = !empty($loaded_bundle) ? (string) $loaded_bundle : '';
+      }
       if (!in_array(strtolower($entity_type), $allowed_entity_types_lower, TRUE)
         && ($bundle === '' || !in_array(strtolower($bundle), $allowed_entity_types_lower, TRUE))) {
         continue;
