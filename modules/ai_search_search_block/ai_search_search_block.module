@@ -442,13 +442,13 @@ function _ai_search_block_defaults() {
 function ai_search_search_block_block_info() {
   // IMPORTANT: deltas here must match in _configure/_save/_view.
   $blocks['ai_search_search_block'] = [
-    'info' => t('Search API AI Search Block'),
+    'info' => t('AI Search Block'),
     'description' => t('Provides a search block that uses AI to enhance search results.'),
     'cache' => BACKDROP_NO_CACHE,
   ];
 
   $blocks['ai_search_search_block_response'] = [
-    'info' => t('Search API AI Block Response'),
+    'info' => t('AI Search Block Response'),
     'description' => t('Displays AI-generated responses to search queries.'),
   ];
 
@@ -583,7 +583,8 @@ function ai_search_search_block_block_configure($delta = '', $settings = []) {
   ];
 
   $ai_config = config('ai.settings');
-  $apiKey = key_get_key_value($ai_config->get('api_key'));
+  $ai_api_key_name = $ai_config->get('api_key');
+  $apiKey = !empty($ai_api_key_name) ? key_get_key_value($ai_api_key_name) : NULL;
 
   // Cache the model list for 1 hour to avoid slow API calls during form build.
   $cache_id = 'ai_search_search_block_model_list';
@@ -850,7 +851,7 @@ function ai_search_search_block_block_view($delta = '', $settings = []) {
   ];
 
   if ($delta === 'ai_search_search_block') {
-    $block['subject'] = t('Search API AI Search');
+    $block['subject'] = t('AI Search');
 
     // Stable id for this block instance.
     $block_id = !empty($settings['uuid']) ? $settings['uuid'] : 'ai_sb_' . substr(hash('sha256', serialize($settings)), 0, 12);
@@ -906,7 +907,7 @@ function ai_search_search_block_block_view($delta = '', $settings = []) {
   }
 
   if ($delta === 'ai_search_search_block_response') {
-    $block['subject'] = t('Search API AI Response');
+    $block['subject'] = t('AI Search Response');
 
     // Render array; template prints container with .search-api-ai-search-block-output.
     $block['content'] = [

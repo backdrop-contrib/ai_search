@@ -54,7 +54,7 @@ function ai_search_search_block_log_menu() {
   $items['admin/reports/ai/search-block-log/%ai_search_search_block_log'] = [
     'title' => 'View Log Entry',
     'page callback' => 'ai_search_search_block_log_view_entry',
-    'page arguments' => [3],
+    'page arguments' => [4],
     'access arguments' => ['view search api ai search block log'],
     'type' => MENU_CALLBACK,
   ];
@@ -63,7 +63,7 @@ function ai_search_search_block_log_menu() {
   $items['admin/reports/ai/search-block-log/%ai_search_search_block_log/edit'] = [
     'title' => 'Edit Log Entry',
     'page callback' => 'backdrop_get_form',
-    'page arguments' => ['ai_search_search_block_log_edit_form', 3],
+    'page arguments' => ['ai_search_search_block_log_edit_form', 4],
     'access arguments' => ['administer search api ai search block log'],
     'type' => MENU_CALLBACK,
     'file' => 'ai_search_search_block_log.admin.inc',
@@ -73,7 +73,7 @@ function ai_search_search_block_log_menu() {
   $items['admin/reports/ai/search-block-log/%ai_search_search_block_log/delete'] = [
     'title' => 'Delete Log Entry',
     'page callback' => 'backdrop_get_form',
-    'page arguments' => ['ai_search_search_block_log_delete_form', 3],
+    'page arguments' => ['ai_search_search_block_log_delete_form', 4],
     'access arguments' => ['administer search api ai search block log'],
     'type' => MENU_CALLBACK,
     'file' => 'ai_search_search_block_log.admin.inc',
