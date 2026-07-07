@@ -340,8 +340,18 @@ function ai_search_rag_extract_sources($server, $index, $vector_results, $score_
     $metadata = $resolved['metadata'];
     $entity_type = $resolved['entity_type'];
     $entity_id = $resolved['entity_id'];
-    if (!empty($allowed_entity_types) && !in_array($entity_type, $allowed_entity_types, TRUE)) {
-      continue;
+    if (!empty($allowed_entity_types)) {
+      // The tool's entity_types param is documented as the raw Backdrop
+      // entity type ("node", "taxonomy_term"), but models routinely pass
+      // content/bundle names instead (e.g. "person", "faq") since that's
+      // the more intuitive reading of "type of content." Matching only the
+      // raw entity type meant any bundle-style filter silently zeroed out
+      // every result. Accept either.
+      $bundle = !empty($metadata['type']) ? (string) $metadata['type'] : '';
+      if (!in_array($entity_type, $allowed_entity_types, TRUE)
+        && ($bundle === '' || !in_array($bundle, $allowed_entity_types, TRUE))) {
+        continue;
+      }
     }
 
     $entity = $resolved['entity'];
