@@ -30,10 +30,16 @@ class AITextChunker {
    *   An array of text chunks.
    */
   public static function chunkTextByTokens($text, $maxTokens, $minOverlapTokens) {
+    $maxTokens = max(1, $maxTokens);
+    // Overlap can never reach/exceed the chunk size itself, or chunkText()
+    // would never advance past a chunk. Clamped again in chunkText() against
+    // the actual chunk length, since a chunk can end up far shorter than
+    // maxSize when an early whitespace break is found.
+    $minOverlapTokens = max(0, min($minOverlapTokens, $maxTokens - 1));
     return self::chunkText(
       $text,
-      max(1, $maxTokens) * self::CHARS_PER_TOKEN,
-      max(0, $minOverlapTokens) * self::CHARS_PER_TOKEN
+      $maxTokens * self::CHARS_PER_TOKEN,
+      $minOverlapTokens * self::CHARS_PER_TOKEN
     );
   }
 
@@ -78,9 +84,15 @@ class AITextChunker {
       // If $chunk has no whitespace to break on (e.g. a long unbroken token), fall
       // back to advancing past the whole chunk minus overlap so we always make
       // forward progress instead of looping on the same text forever.
+      // $chunk can end up much shorter than $maxSize when an early whitespace
+      // break is found, so the overlap must be clamped against its actual
+      // length before use — otherwise mb_strrpos() throws a ValueError for an
+      // offset outside the haystack.
+      $chunkLength = mb_strlen($chunk);
+      $effectiveOverlap = min($minOverlap, max($chunkLength - 1, 0));
       $remainingText = mb_substr(
         $remainingText,
-        self::getLastWhitespacePosition($chunk, -$minOverlap) ?: max(mb_strlen($chunk) - $minOverlap, 1)
+        self::getLastWhitespacePosition($chunk, -$effectiveOverlap) ?: max($chunkLength - $effectiveOverlap, 1)
       );
     }
 
