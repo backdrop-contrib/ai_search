@@ -682,6 +682,40 @@ function ai_search_query_backend($server, $index, array $vector, $dimension, $to
  * Convert text to embedding vectors (main conversion function).
  * Uses compatibility helpers to resolve AI API clients when needed.
  */
+/**
+ * Prepend whatever task-specific prefix this embedding model requires.
+ *
+ * Some embedding models (nomic-embed-text is the first known case) are
+ * trained expecting a "search_query: " / "search_document: " style prefix
+ * and document materially worse retrieval quality without it. Rather than
+ * hardcoding that check here, providers declare their own models' quirks via
+ * hook_ai_embedding_model_quirks() (see ai_provider_ollama_ai_embedding_model_quirks());
+ * this function just looks up whichever pattern matches the given model. A
+ * model with no matching quirk entry is returned unchanged -- most models
+ * (OpenAI, Gemini, etc.) don't use this convention at all.
+ *
+ * @param string $text
+ *   The text to embed.
+ * @param string $model
+ *   The model identifier (e.g. "ollama/nomic-embed-text:latest").
+ * @param string $mode
+ *   'document' for indexed content, 'query' for search queries.
+ */
+function ai_search_apply_embedding_task_prefix($text, $model, $mode) {
+  $model = (string) $model;
+  $quirks = module_invoke_all('ai_embedding_model_quirks');
+  foreach ($quirks as $pattern => $quirk) {
+    if (stripos($model, $pattern) === FALSE) {
+      continue;
+    }
+    $key = ($mode === 'query') ? 'query_prefix' : 'document_prefix';
+    if (!empty($quirk[$key])) {
+      return $quirk[$key] . $text;
+    }
+  }
+  return $text;
+}
+
 function ai_search_convert_embedding($value, $original_type, $type, array $embedding_settings, $field_name = 'unknown_field', $server = NULL) {
   if ($type !== 'llm_vector_embedding' || !is_string($value)) {
     watchdog('ai_search', 'Bad embedding conversion call: type=@type, is_string=@is_string', [
@@ -726,7 +760,7 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
     ], WATCHDOG_ERROR);
     return [];
   }
-  $chunks = AITextChunker::chunkText($prepared_text, $chunk_size, $chunk_overlap);
+  $chunks = AITextChunker::chunkTextByTokens($prepared_text, $chunk_size, $chunk_overlap);
 
   try {
     $config = ai_search_get_embedding_engine_config($embedding_settings);
@@ -823,14 +857,15 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
       continue;
     }
     try {
+      $chunk_for_embedding = ai_search_apply_embedding_task_prefix($chunk_clean, $model, 'document');
       if ($engine_instance) {
-        $vector = $engine_instance->generateEmbeddings($chunk_clean);
+        $vector = $engine_instance->generateEmbeddings($chunk_for_embedding);
       }
       else {
         // We resolved the AI API client above; prefer the stripped model name
         $use_model = isset($stripped_model) && !empty($stripped_model) ? $stripped_model : $model;
         // Use the compatibility wrapper to call embeddings in various client shapes
-        $vector = $api_client->embedding($chunk_clean, $use_model);
+        $vector = $api_client->embedding($chunk_for_embedding, $use_model);
       }
 
       if (!is_array($vector) || count($vector) !== (int) $expected_dimension) {
@@ -943,13 +978,13 @@ function ai_search_form_alter(&$form, &$form_state, $form_id) {
       '#type' => 'textfield',
       '#title' => t('Maximum chunk size (tokens)'),
       '#default_value' => $settings['chunk_size'] ?? 500,
-      '#description' => t('Maximum chunk size allowed when breaking up larger content.'),
+      '#description' => t('Maximum chunk size allowed when breaking up larger content. Tokens are approximated at ~4 characters each; no model-specific tokenizer is used.'),
     ];
     $form['options']['form']['embedding_strategy']['chunk_overlap'] = [
       '#type' => 'textfield',
       '#title' => t('Minimum chunk overlap (tokens)'),
       '#default_value' => $settings['chunk_overlap'] ?? 100,
-      '#description' => t('Number of tokens to overlap between chunks.'),
+      '#description' => t('Number of tokens to overlap between chunks. Tokens are approximated at ~4 characters each.'),
     ];
     // After you create $form['options']['form']['embedding_strategy']...
     $form['options']['form']['embedding_strategy']['how_to'] = [

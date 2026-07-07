@@ -280,7 +280,7 @@ function ai_search_rag_build_embedding_vector($index, $query) {
   }
 
   try {
-    $vector = $embedding_engine->generateEmbeddings($query);
+    $vector = $embedding_engine->generateEmbeddings(ai_search_apply_embedding_task_prefix($query, $model, 'query'));
   }
   catch (\Exception $e) {
     return [

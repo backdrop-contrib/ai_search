@@ -6,6 +6,38 @@
 class AITextChunker {
 
   /**
+   * Rough average characters-per-token ratio for English text, used to
+   * approximate token counts without a model-specific BPE tokenizer.
+   */
+  const CHARS_PER_TOKEN = 4;
+
+  /**
+   * Generate chunks from a string, sized by an approximate token count.
+   *
+   * chunkText() operates on characters. Embedding models size their context
+   * windows in tokens, so callers configuring "chunk size" in tokens need
+   * that value converted to characters first — otherwise a "500 token"
+   * setting produces chunks ~4x smaller than intended.
+   *
+   * @param string $text
+   *   The text to chunk.
+   * @param int $maxTokens
+   *   The approximate maximum tokens per chunk.
+   * @param int $minOverlapTokens
+   *   The approximate minimum token overlap between chunks.
+   *
+   * @return array
+   *   An array of text chunks.
+   */
+  public static function chunkTextByTokens($text, $maxTokens, $minOverlapTokens) {
+    return self::chunkText(
+      $text,
+      max(1, $maxTokens) * self::CHARS_PER_TOKEN,
+      max(0, $minOverlapTokens) * self::CHARS_PER_TOKEN
+    );
+  }
+
+  /**
    * Generate chunks from a string.
    *
    * @param string $text
