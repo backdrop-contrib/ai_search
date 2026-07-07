@@ -90,10 +90,13 @@ class AITextChunker {
       // offset outside the haystack.
       $chunkLength = mb_strlen($chunk);
       $effectiveOverlap = min($minOverlap, max($chunkLength - 1, 0));
-      $remainingText = mb_substr(
-        $remainingText,
-        self::getLastWhitespacePosition($chunk, -$effectiveOverlap) ?: max($chunkLength - $effectiveOverlap, 1)
-      );
+      $whitespacePosition = self::getLastWhitespacePosition($chunk, -$effectiveOverlap);
+      $resumePosition = ($whitespacePosition !== NULL) ? $whitespacePosition : max($chunkLength - $effectiveOverlap, 1);
+      // A whitespace position of 0 (e.g. leading whitespace within the
+      // overlap window) is a legitimate match, but resuming at 0 would leave
+      // $remainingText unchanged and loop forever; guarantee at least 1 char
+      // of forward progress.
+      $remainingText = mb_substr($remainingText, max($resumePosition, 1));
     }
 
     // Remove any empty chunks.
