@@ -1,0 +1,5 @@
+[AITextChunkerTestCase]
+name = AI Search text chunker
+description = Verifies token-to-character sizing and overlap clamping in AITextChunker.
+group = Search API AI
+file = ai_text_chunker.test

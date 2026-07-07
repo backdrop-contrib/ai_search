@@ -1,0 +1,118 @@
+<?php
+
+/**
+ * @file
+ * Tests for the AITextChunker token-to-character sizing and overlap clamping.
+ */
+class AITextChunkerTestCase extends BackdropUnitTestCase {
+
+  /**
+   * Sets up the test environment.
+   */
+  public function setUp() {
+    parent::setUp();
+    require_once backdrop_get_path('module', 'ai_search') . '/includes/AITextChunker.inc';
+  }
+
+  /**
+   * chunkTextByTokens() must scale tokens to characters via CHARS_PER_TOKEN
+   * before delegating to chunkText(), so a token-sized chunk is ~4x larger
+   * than the same numeric value would be if treated as a character count.
+   */
+  public function testChunkTextByTokensScalesToCharacters() {
+    $text = str_repeat('a', 10) . ' ' . str_repeat('b', 10) . ' ' . str_repeat('c', 10);
+
+    // 8 tokens = 32 chars, comfortably larger than the 32-char text above,
+    // so it should come back as a single, untouched chunk.
+    $chunks = AITextChunker::chunkTextByTokens($text, 8, 0);
+    $this->assertEqual(1, count($chunks), 'Text within maxTokens*CHARS_PER_TOKEN stays a single chunk.');
+    $this->assertEqual($text, $chunks[0], 'Single chunk is returned unmodified.');
+
+    // Directly mirror the token->char conversion chunkTextByTokens() should
+    // perform, and confirm it matches calling chunkText() with those values.
+    $maxTokens = 3;
+    $overlapTokens = 1;
+    $expected = AITextChunker::chunkText($text, $maxTokens * AITextChunker::CHARS_PER_TOKEN, $overlapTokens * AITextChunker::CHARS_PER_TOKEN);
+    $actual = AITextChunker::chunkTextByTokens($text, $maxTokens, $overlapTokens);
+    $this->assertEqual($expected, $actual, 'chunkTextByTokens() scales maxTokens/minOverlapTokens by CHARS_PER_TOKEN before calling chunkText().');
+  }
+
+  /**
+   * A maxTokens of 1 (the smallest allowed) must not error and must still
+   * make forward progress across a longer text.
+   */
+  public function testChunkTextByTokensHandlesMinimalMaxTokens() {
+    $text = 'one two three four five six seven eight nine ten';
+    $chunks = AITextChunker::chunkTextByTokens($text, 1, 0);
+    $this->assertTrue(count($chunks) > 1, 'A maxTokens of 1 still splits a longer text into multiple chunks.');
+
+    // With zero overlap, chunks should partition the text without dropping
+    // or duplicating any non-whitespace content.
+    $reassembled = preg_replace('/\s+/', '', implode('', $chunks));
+    $original = preg_replace('/\s+/', '', $text);
+    $this->assertEqual($original, $reassembled, 'Non-whitespace content is preserved across minimal-size chunks.');
+  }
+
+  /**
+   * Overlap tokens equal to or greater than maxTokens must be clamped so the
+   * chunker always advances instead of looping or exceeding the chunk size.
+   */
+  public function testChunkTextByTokensClampsOverlapAtOrAboveMaxTokens() {
+    $text = str_repeat('word ', 200);
+
+    foreach ([5, 6, 50] as $overlapTokens) {
+      $chunks = AITextChunker::chunkTextByTokens($text, 5, $overlapTokens);
+      $this->assertTrue(count($chunks) > 1, "Overlap of $overlapTokens tokens (>= maxTokens) still produces multiple chunks instead of looping.");
+      $this->assertTrue(count($chunks) < 10000, "Overlap of $overlapTokens tokens does not runaway-loop.");
+    }
+  }
+
+  /**
+   * Negative maxTokens/minOverlapTokens must be clamped to safe minimums
+   * (1 token, 0 overlap) rather than producing invalid character sizes.
+   */
+  public function testChunkTextByTokensClampsNegativeInputs() {
+    $text = 'a short sentence to chunk';
+    $chunks = AITextChunker::chunkTextByTokens($text, -5, -5);
+    $this->assertTrue(count($chunks) >= 1, 'Negative token inputs are clamped rather than producing no chunks.');
+  }
+
+  /**
+   * A chunk with no whitespace to break on (e.g. a long unbroken token) must
+   * not stall chunkText() into an infinite loop, regardless of overlap.
+   */
+  public function testChunkTextAdvancesThroughUnbrokenText() {
+    $text = str_repeat('a', 50);
+
+    $chunks = AITextChunker::chunkText($text, 10, 0);
+    $this->assertEqual(5, count($chunks), 'Unbroken text with zero overlap is split into exactly length/maxSize chunks.');
+
+    $chunks = AITextChunker::chunkText($text, 10, 3);
+    $this->assertTrue(count($chunks) > 1, 'Unbroken text with nonzero overlap still terminates with multiple chunks.');
+  }
+
+  /**
+   * An overlap that is smaller than maxSize can still exceed the length of a
+   * particular chunk when an early whitespace break is found; this must not
+   * throw (regression for mb_strrpos() ValueError on an out-of-range offset).
+   */
+  public function testChunkTextOverlapLargerThanChunkDoesNotError() {
+    $text = 'a ' . str_repeat('b', 100);
+    $chunks = AITextChunker::chunkText($text, 40, 30);
+    $this->assertTrue(count($chunks) > 1, 'A short first chunk with a larger overlap value chunks without error.');
+  }
+
+  /**
+   * Baseline whitespace-based chunking with overlap.
+   */
+  public function testChunkTextBreaksOnWhitespaceWithOverlap() {
+    $text = 'The quick brown fox jumps over the lazy dog and then runs away quickly into the forest';
+    $chunks = AITextChunker::chunkText($text, 20, 5);
+
+    $this->assertTrue(count($chunks) > 1, 'Text longer than maxSize is split into multiple chunks.');
+    foreach ($chunks as $chunk) {
+      $this->assertTrue(mb_strlen($chunk) <= 20, 'Each chunk stays within maxSize.');
+    }
+  }
+
+}
