@@ -155,7 +155,11 @@
         'padding': '0',
         'margin': '-1px',
         'overflow': 'hidden',
+        // Legacy clip for older browsers
         'clip': 'rect(0,0,0,0)',
+        // Modern clip-path fallback for robust hiding in newer browsers
+        '-webkit-clip-path': 'inset(50%)',
+        'clip-path': 'inset(50%)',
         'white-space': 'nowrap',
         'border': '0'
       });

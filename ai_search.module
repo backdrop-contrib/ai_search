@@ -709,8 +709,38 @@ function ai_search_apply_embedding_task_prefix($text, $model, $mode) {
       continue;
     }
     $key = ($mode === 'query') ? 'query_prefix' : 'document_prefix';
-    if (!empty($quirk[$key])) {
-      return $quirk[$key] . $text;
+    if (empty($quirk[$key])) {
+      continue;
+    }
+
+    $prefix = $quirk[$key];
+    // If array_merge_recursive produced an array for duplicate keys,
+    // normalize by extracting the first scalar value if possible.
+    if (is_array($prefix)) {
+      $found = NULL;
+      $stack = $prefix;
+      while (!empty($stack)) {
+        $val = array_shift($stack);
+        if (is_array($val)) {
+          foreach ($val as $v) {
+            $stack[] = $v;
+          }
+          continue;
+        }
+        if (is_scalar($val)) {
+          $found = (string) $val;
+          break;
+        }
+      }
+      if ($found === NULL) {
+        // No usable scalar prefix found; skip this quirk entry.
+        continue;
+      }
+      $prefix = $found;
+    }
+
+    if (is_scalar($prefix)) {
+      return (string) $prefix . $text;
     }
   }
   return $text;
