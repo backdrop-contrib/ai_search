@@ -322,6 +322,10 @@ function ai_search_rag_extract_sources($server, $index, $vector_results, $score_
   $backend_class = $server->class;
   $matches = ai_search_backend_result_matches($server, $vector_results, $index);
 
+  // Normalize once so LLM-supplied casing (e.g. "Person") still matches a
+  // lowercase bundle/entity type like "person".
+  $allowed_entity_types_lower = array_map('strtolower', $allowed_entity_types);
+
   $sources = [];
   foreach ($matches as $match) {
     if (!is_array($match)) {
@@ -348,8 +352,8 @@ function ai_search_rag_extract_sources($server, $index, $vector_results, $score_
       // raw entity type meant any bundle-style filter silently zeroed out
       // every result. Accept either.
       $bundle = !empty($metadata['type']) ? (string) $metadata['type'] : '';
-      if (!in_array($entity_type, $allowed_entity_types, TRUE)
-        && ($bundle === '' || !in_array($bundle, $allowed_entity_types, TRUE))) {
+      if (!in_array(strtolower($entity_type), $allowed_entity_types_lower, TRUE)
+        && ($bundle === '' || !in_array(strtolower($bundle), $allowed_entity_types_lower, TRUE))) {
         continue;
       }
     }
