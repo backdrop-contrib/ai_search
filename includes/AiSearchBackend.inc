@@ -576,6 +576,81 @@ function ai_search_normalize_vectors($entity_type, $entity_id, $expected_dimensi
 }
 
 /**
+ * Resolve a Search API query into a query embedding, for backend search().
+ *
+ * Every vector backend's search() needs to: pick the configured embedding
+ * model, extract search text from the query keys, resolve an AI API client,
+ * apply the query-side embedding task prefix, and request the embedding.
+ * That block was duplicated near-verbatim across all four backends (and one
+ * of them — Pinecone — drifted and forgot the prefix step, causing a
+ * document/query mismatch for asymmetric embedding models). Call this from
+ * each backend's search() instead of re-implementing the block.
+ *
+ * @param SearchApiQueryInterface $query
+ *   The incoming Search API query.
+ * @param array $options
+ *   The backend's $this->options; must contain 'embeddings_engine' or the
+ *   legacy 'embedding_model' key.
+ * @param string $watchdog_channel
+ *   Module name to log under, e.g. 'ai_search_pinecone'.
+ *
+ * @return array|null
+ *   NULL if there's no configured model or no search text (caller should
+ *   return an empty result set in that case). Otherwise:
+ *   [
+ *     'text'  => string   // extracted/trimmed search text
+ *     'vector' => float[] // the query embedding
+ *     'model' => string   // resolved model id actually used for embedding()
+ *   ]
+ *
+ * @throws Exception
+ *   If an API client can't be resolved for the model, or the embedding
+ *   request fails/returns empty.
+ */
+function ai_search_resolve_query_embedding(SearchApiQueryInterface $query, array $options, $watchdog_channel) {
+  $model = $options['embeddings_engine'] ?? $options['embedding_model'] ?? NULL;
+  if (empty($model)) {
+    watchdog($watchdog_channel, 'No model configured!', [], WATCHDOG_ERROR);
+    return NULL;
+  }
+
+  $keys = $query->getKeys();
+  $text = is_array($keys)
+    ? implode(' ', array_filter($keys, function ($key) {
+      return is_string($key) && $key !== 'AND' && $key !== '#conjunction';
+    }))
+    : (string) $keys;
+  $text = trim($text);
+  if ($text === '') {
+    return NULL;
+  }
+
+  $stripped_model = NULL;
+  $api = ai_get_api_for_model($model, $stripped_model);
+  $model_to_use = !empty($stripped_model) ? $stripped_model : $model;
+
+  if ($api && method_exists($api, 'recordLog')) {
+    $api->recordLog('search_embedding', $model, ['text_len' => strlen($text)], NULL, TRUE, 0);
+  }
+
+  if (!$api) {
+    watchdog($watchdog_channel, 'Failed to resolve API client for model: @model', ['@model' => $model], WATCHDOG_ERROR);
+    throw new Exception('Failed to get API client for model: ' . $model);
+  }
+
+  $vector = $api->embedding(ai_search_apply_embedding_task_prefix($text, $model_to_use, 'query'), $model_to_use);
+  if (empty($vector)) {
+    throw new Exception('Failed to retrieve embedding.');
+  }
+
+  return [
+    'text' => $text,
+    'vector' => $vector,
+    'model' => $model_to_use,
+  ];
+}
+
+/**
  * Adds metadata re-ranking form elements to a backend configuration form.
  *
  * Call from configurationForm() in each backend service class.
