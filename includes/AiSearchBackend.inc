@@ -673,7 +673,7 @@ function ai_search_resolve_query_embedding(SearchApiQueryInterface $query, array
   try {
     $vector = $api->embedding(ai_search_apply_embedding_task_prefix($text, $model_to_use, 'query'), $model_to_use);
   }
-  catch (\Exception $e) {
+  catch (\Throwable $e) {
     $error_message = $e->getMessage();
     throw $e;
   }

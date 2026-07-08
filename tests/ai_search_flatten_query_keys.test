@@ -1,0 +1,67 @@
+<?php
+
+/**
+ * @file
+ * Tests for ai_search_flatten_query_keys() recursive key flattening.
+ */
+class AiSearchFlattenQueryKeysTestCase extends BackdropUnitTestCase {
+
+  /**
+   * Sets up the test environment.
+   */
+  public function setUp() {
+    parent::setUp();
+    require_once backdrop_get_path('module', 'ai_search') . '/includes/AiSearchBackend.inc';
+  }
+
+  /**
+   * Nested query groups must be recursed into, not dropped.
+   */
+  public function testFlattensNestedGroups() {
+    $keys = [
+      '#conjunction' => 'OR',
+      0 => 'foo',
+      1 => [
+        '#conjunction' => 'AND',
+        0 => 'bar',
+        1 => 'baz',
+      ],
+    ];
+    $this->assertEqual(['foo', 'bar', 'baz'], ai_search_flatten_query_keys($keys), 'Nested groups are flattened into a single term list.');
+  }
+
+  /**
+   * Control entries are identified by array KEY, not by value: a
+   * conjunction's value ('OR') is a legitimate term and must be kept, while
+   * the '#conjunction'/'#negation' keys themselves must be dropped
+   * regardless of what value they carry.
+   */
+  public function testIgnoresControlKeysNotValues() {
+    $keys = [
+      '#conjunction' => 'OR',
+      '#negation' => FALSE,
+      0 => 'OR',
+      1 => 'AND',
+    ];
+    $this->assertEqual(['OR', 'AND'], ai_search_flatten_query_keys($keys), 'Conjunction/negation keys are dropped by key, but identical string values elsewhere are preserved.');
+  }
+
+  /**
+   * Non-array, non-string inputs must return an empty list rather than
+   * erroring or coercing to an unexpected string.
+   */
+  public function testNonArrayNonStringInputsReturnEmptyList() {
+    $this->assertEqual([], ai_search_flatten_query_keys(NULL), 'NULL input returns an empty list.');
+    $this->assertEqual([], ai_search_flatten_query_keys(42), 'Integer input returns an empty list.');
+    $this->assertEqual([], ai_search_flatten_query_keys(new stdClass()), 'Object input returns an empty list.');
+  }
+
+  /**
+   * A plain string (the simple, non-parsed query case) is returned as a
+   * single-element list.
+   */
+  public function testPlainStringReturnsSingleElementList() {
+    $this->assertEqual(['hello world'], ai_search_flatten_query_keys('hello world'), 'A plain string key is wrapped in a single-element list.');
+  }
+
+}
