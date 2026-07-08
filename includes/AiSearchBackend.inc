@@ -641,9 +641,10 @@ function ai_search_flatten_query_keys($keys) {
  *     'model' => string   // resolved model id actually used for embedding()
  *   ]
  *
- * @throws Exception
+ * @throws \Throwable
  *   If an API client can't be resolved for the model, or the embedding
- *   request fails/returns empty.
+ *   request fails/returns empty. Any throwable raised by the underlying
+ *   embedding() call is logged (with its message) and rethrown as-is.
  */
 function ai_search_resolve_query_embedding(SearchApiQueryInterface $query, array $options, $watchdog_channel) {
   $model = $options['embeddings_engine'] ?? $options['embedding_model'] ?? NULL;
@@ -681,7 +682,7 @@ function ai_search_resolve_query_embedding(SearchApiQueryInterface $query, array
     if (method_exists($api, 'recordLog')) {
       $duration = microtime(TRUE) - $start_time;
       $success = !empty($vector);
-      $api->recordLog('search_embedding', $model, ['text_len' => strlen($text)], $success ? $vector : NULL, $success, $duration, $error_message);
+      $api->recordLog('search_embedding', $model_to_use, ['text_len' => strlen($text)], $success ? $vector : NULL, $success, $duration, $error_message);
     }
   }
 
