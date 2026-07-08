@@ -662,16 +662,29 @@ function ai_search_resolve_query_embedding(SearchApiQueryInterface $query, array
   $api = ai_get_api_for_model($model, $stripped_model);
   $model_to_use = !empty($stripped_model) ? $stripped_model : $model;
 
-  if ($api && method_exists($api, 'recordLog')) {
-    $api->recordLog('search_embedding', $model, ['text_len' => strlen($text)], NULL, TRUE, 0);
-  }
-
   if (!$api) {
     watchdog($watchdog_channel, 'Failed to resolve API client for model: @model', ['@model' => $model], WATCHDOG_ERROR);
     throw new Exception('Failed to get API client for model: ' . $model);
   }
 
-  $vector = $api->embedding(ai_search_apply_embedding_task_prefix($text, $model_to_use, 'query'), $model_to_use);
+  $start_time = microtime(TRUE);
+  $vector = NULL;
+  $error_message = NULL;
+  try {
+    $vector = $api->embedding(ai_search_apply_embedding_task_prefix($text, $model_to_use, 'query'), $model_to_use);
+  }
+  catch (\Exception $e) {
+    $error_message = $e->getMessage();
+    throw $e;
+  }
+  finally {
+    if (method_exists($api, 'recordLog')) {
+      $duration = microtime(TRUE) - $start_time;
+      $success = !empty($vector);
+      $api->recordLog('search_embedding', $model, ['text_len' => strlen($text)], $success ? $vector : NULL, $success, $duration, $error_message);
+    }
+  }
+
   if (empty($vector)) {
     throw new Exception('Failed to retrieve embedding.');
   }
