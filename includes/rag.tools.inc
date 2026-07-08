@@ -322,9 +322,9 @@ function ai_search_rag_extract_sources($server, $index, $vector_results, $score_
   $backend_class = $server->class;
   $matches = ai_search_backend_result_matches($server, $vector_results, $index);
 
-  // Normalize once so LLM-supplied casing (e.g. "Person") still matches a
-  // lowercase bundle/entity type like "person".
-  $allowed_entity_types_lower = array_map('strtolower', $allowed_entity_types);
+  // Normalize once so LLM-supplied casing/whitespace (e.g. "Person ") still
+  // matches a lowercase bundle/entity type like "person".
+  $allowed_entity_types_lower = array_map('strtolower', array_map('trim', $allowed_entity_types));
 
   $sources = [];
   foreach ($matches as $match) {

@@ -57,6 +57,11 @@ class AITextChunker {
    *   An array of text chunks.
    */
   public static function chunkText($text, $maxSize, $minOverlap) {
+    // Guard against non-positive inputs from direct callers (chunkTextByTokens()
+    // already clamps before calling in, but chunkText() is public API too).
+    $maxSize = max(1, $maxSize);
+    $minOverlap = max(0, min($minOverlap, $maxSize - 1));
+
     $remainingText = $text;
     $chunks = [];
 

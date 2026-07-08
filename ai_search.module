@@ -710,8 +710,30 @@ function ai_search_query_backend($server, $index, array $vector, $dimension, $to
  *   'document' for indexed content, 'query' for search queries.
  */
 function ai_search_apply_embedding_task_prefix($text, $model, $mode) {
-  $model = (string) $model;
   $quirks = module_invoke_all('ai_embedding_model_quirks');
+  $prefix = ai_search_resolve_embedding_prefix($quirks, (string) $model, $mode);
+  return ($prefix !== NULL) ? $prefix . $text : $text;
+}
+
+/**
+ * Resolve the task-specific prefix for a model from a quirks map.
+ *
+ * Extracted from ai_search_apply_embedding_task_prefix() so the pattern
+ * sorting/matching and duplicate-key flattening logic can be unit tested
+ * with a caller-supplied quirks map, without requiring the
+ * hook_ai_embedding_model_quirks() hook system to be bootstrapped.
+ *
+ * @param array $quirks
+ *   Quirks map as returned by module_invoke_all('ai_embedding_model_quirks').
+ * @param string $model
+ *   The model identifier to match patterns against.
+ * @param string $mode
+ *   'document' for indexed content, 'query' for search queries.
+ *
+ * @return string|null
+ *   The resolved prefix, or NULL if no quirk pattern matches.
+ */
+function ai_search_resolve_embedding_prefix(array $quirks, $model, $mode) {
   // module_invoke_all() merges results keyed by pattern in arbitrary hook
   // registration order. Sort patterns longest-first so a specific pattern
   // (e.g. "nomic-embed-text") always wins over a broader one (e.g. "embed")
@@ -755,10 +777,10 @@ function ai_search_apply_embedding_task_prefix($text, $model, $mode) {
     }
 
     if (is_scalar($prefix)) {
-      return (string) $prefix . $text;
+      return (string) $prefix;
     }
   }
-  return $text;
+  return NULL;
 }
 
 /**
