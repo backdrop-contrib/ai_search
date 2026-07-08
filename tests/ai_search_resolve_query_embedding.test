@@ -137,6 +137,31 @@ class AiSearchResolveQueryEmbeddingTestCase extends BackdropUnitTestCase {
   }
 
   /**
+   * When embedding() returns an empty vector (no exception thrown), the
+   * helper must throw its own "Failed to retrieve embedding." error and
+   * recordLog() must still capture the failure, with no error message since
+   * nothing was thrown.
+   */
+  public function testEmptyVectorThrowsAndLogsFailure() {
+    global $__ai_search_test_fake_api;
+    $api = new AiSearchTestFakeApi('empty');
+    $__ai_search_test_fake_api = $api;
+
+    try {
+      ai_search_resolve_query_embedding(new AiSearchTestQuery('hello'), ['embeddings_engine' => 'fake/model'], 'ai_search_test');
+      $this->fail('Expected an exception when embedding() returns an empty vector.');
+    }
+    catch (\Exception $e) {
+      $this->assertEqual('Failed to retrieve embedding.', $e->getMessage(), 'The helper throws its own error for an empty vector.');
+    }
+
+    $this->assertEqual(1, count($api->calls), 'recordLog() is called exactly once when the vector comes back empty.');
+    $log_call = $api->calls[0];
+    $this->assertFalse($log_call[4], 'recordLog() reports failure when the vector comes back empty.');
+    $this->assertNull($log_call[6], 'recordLog() has no error message since embedding() did not throw.');
+  }
+
+  /**
    * When embedding() throws, the exception must propagate and recordLog()
    * must capture the failure with the real error message.
    */
