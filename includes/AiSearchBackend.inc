@@ -576,6 +576,44 @@ function ai_search_normalize_vectors($entity_type, $entity_id, $expected_dimensi
 }
 
 /**
+ * Recursively flatten a Search API keys structure into a flat term list.
+ *
+ * getKeys() can return nested groups, e.g.
+ *   ['#conjunction' => 'OR', 0 => 'foo', 1 => ['#conjunction' => 'AND', 0 => 'bar']]
+ * Control entries are identified by array KEY (e.g. '#conjunction',
+ * '#negation'), not by value, since a conjunction's value ('AND'/'OR') is a
+ * legitimate string that would otherwise leak into the embedding text.
+ *
+ * @param mixed $keys
+ *   A getKeys() return value: a string, or a (possibly nested) keys array.
+ *
+ * @return string[]
+ *   Flat list of search term strings.
+ */
+function ai_search_flatten_query_keys($keys) {
+  if (is_string($keys)) {
+    return [$keys];
+  }
+  if (!is_array($keys)) {
+    return [];
+  }
+
+  $terms = [];
+  foreach ($keys as $key => $value) {
+    if (is_string($key) && $key[0] === '#') {
+      continue;
+    }
+    if (is_array($value)) {
+      $terms = array_merge($terms, ai_search_flatten_query_keys($value));
+    }
+    elseif (is_string($value)) {
+      $terms[] = $value;
+    }
+  }
+  return $terms;
+}
+
+/**
  * Resolve a Search API query into a query embedding, for backend search().
  *
  * Every vector backend's search() needs to: pick the configured embedding
@@ -615,12 +653,7 @@ function ai_search_resolve_query_embedding(SearchApiQueryInterface $query, array
   }
 
   $keys = $query->getKeys();
-  $text = is_array($keys)
-    ? implode(' ', array_filter($keys, function ($key) {
-      return is_string($key) && $key !== 'AND' && $key !== '#conjunction';
-    }))
-    : (string) $keys;
-  $text = trim($text);
+  $text = trim(implode(' ', ai_search_flatten_query_keys($keys)));
   if ($text === '') {
     return NULL;
   }
