@@ -90,7 +90,12 @@ class AITextChunker {
       // offset outside the haystack.
       $chunkLength = mb_strlen($chunk);
       $effectiveOverlap = min($minOverlap, max($chunkLength - 1, 0));
-      $whitespacePosition = self::getLastWhitespacePosition($chunk, -$effectiveOverlap);
+      // An offset of 0 means "unrestricted search" to mb_strrpos(), not
+      // "search nothing" — with zero overlap that would find whitespace
+      // anywhere in $chunk (often near its end) and duplicate the tail word(s)
+      // of this chunk at the start of the next one. Skip the search and
+      // resume at the hard boundary instead.
+      $whitespacePosition = ($effectiveOverlap > 0) ? self::getLastWhitespacePosition($chunk, -$effectiveOverlap) : NULL;
       $resumePosition = ($whitespacePosition !== NULL) ? $whitespacePosition : max($chunkLength - $effectiveOverlap, 1);
       // A whitespace position of 0 (e.g. leading whitespace within the
       // overlap window) is a legitimate match, but resuming at 0 would leave

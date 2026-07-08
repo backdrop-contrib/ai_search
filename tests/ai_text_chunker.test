@@ -54,6 +54,22 @@ class AITextChunkerTestCase extends BackdropUnitTestCase {
   }
 
   /**
+   * With multiple words per chunk (unlike the single-word-per-chunk case in
+   * testChunkTextByTokensHandlesMinimalMaxTokens), zero overlap must not
+   * duplicate the last word of a chunk at the start of the next one.
+   */
+  public function testChunkTextByTokensZeroOverlapDoesNotDuplicateWords() {
+    $text = 'The quick brown fox jumps over the lazy dog and then runs away quickly into the forest';
+    $chunks = AITextChunker::chunkTextByTokens($text, 5, 0);
+
+    $this->assertTrue(count($chunks) > 1, 'Multi-word text is split into multiple chunks.');
+
+    $reassembled = trim(preg_replace('/\s+/', ' ', implode(' ', $chunks)));
+    $original = trim(preg_replace('/\s+/', ' ', $text));
+    $this->assertEqual($original, $reassembled, 'Reassembling zero-overlap chunks exactly reproduces the original text with no duplicated or dropped words.');
+  }
+
+  /**
    * Overlap tokens equal to or greater than maxTokens must be clamped so the
    * chunker always advances instead of looping or exceeding the chunk size.
    */

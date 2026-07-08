@@ -35,4 +35,47 @@ class AiSearchRagToolsTestCase extends BackdropWebTestCase {
     $this->assertTrue(is_array($result), 'Empty-query response is an array.');
     $this->assertTrue(!empty($result['error']), 'Empty-query response returns an error.');
   }
+
+  /**
+   * No filter configured means every entity_type/bundle pair passes.
+   */
+  public function testEntityTypeAllowedWithNoFilter() {
+    $this->assertTrue(ai_search_rag_entity_type_allowed('node', '', []), 'No allowed_entity_types means everything passes.');
+    $this->assertTrue(ai_search_rag_entity_type_allowed('node', 'person', []), 'No allowed_entity_types means everything passes, bundle or not.');
+  }
+
+  /**
+   * A bundle-only match must pass when metadata['type'] is missing and the
+   * bundle was instead derived from the loaded entity.
+   */
+  public function testEntityTypeAllowedMatchesBundleOnly() {
+    $this->assertTrue(ai_search_rag_entity_type_allowed('node', 'person', ['person']), 'Bundle-only match passes when entity_type is not in the allowed list.');
+    $this->assertFalse(ai_search_rag_entity_type_allowed('node', '', ['person']), 'No match when bundle is empty and entity_type is not allowed.');
+  }
+
+  /**
+   * A bundle match must also pass when metadata['type'] was present.
+   */
+  public function testEntityTypeAllowedMatchesKnownBundle() {
+    $this->assertTrue(ai_search_rag_entity_type_allowed('node', 'faq', ['faq']), 'Bundle from metadata matches the allowed list.');
+  }
+
+  /**
+   * Matching must be case-insensitive on both entity_type and bundle.
+   */
+  public function testEntityTypeAllowedIsCaseInsensitive() {
+    $this->assertTrue(ai_search_rag_entity_type_allowed('Node', 'Person', ['person']), 'Entity type and bundle casing does not affect matching.');
+    $this->assertTrue(ai_search_rag_entity_type_allowed('NODE', '', ['node']), 'Entity type matching ignores case.');
+  }
+
+  /**
+   * Entity-type-only matches must pass even when the bundle does not match
+   * (or is empty), and bundle-only matches must pass even when the raw
+   * entity type does not match.
+   */
+  public function testEntityTypeAllowedEntityTypeOnlyVsBundleOnly() {
+    $this->assertTrue(ai_search_rag_entity_type_allowed('taxonomy_term', 'tags', ['taxonomy_term']), 'entity_type-only match passes regardless of bundle.');
+    $this->assertTrue(ai_search_rag_entity_type_allowed('node', 'faq', ['faq']), 'Bundle-only match passes regardless of entity_type.');
+    $this->assertFalse(ai_search_rag_entity_type_allowed('node', 'article', ['taxonomy_term']), 'Neither entity_type nor bundle matches the allowed list.');
+  }
 }

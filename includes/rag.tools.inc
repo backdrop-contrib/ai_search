@@ -359,8 +359,7 @@ function ai_search_rag_extract_sources($server, $index, $vector_results, $score_
         list(, , $loaded_bundle) = entity_extract_ids($entity_type, $resolved['entity']);
         $bundle = !empty($loaded_bundle) ? (string) $loaded_bundle : '';
       }
-      if (!in_array(strtolower($entity_type), $allowed_entity_types_lower, TRUE)
-        && ($bundle === '' || !in_array(strtolower($bundle), $allowed_entity_types_lower, TRUE))) {
+      if (!ai_search_rag_entity_type_allowed($entity_type, $bundle, $allowed_entity_types_lower)) {
         continue;
       }
     }
@@ -394,6 +393,34 @@ function ai_search_rag_extract_sources($server, $index, $vector_results, $score_
 
   usort($sources, 'ai_search_rag_sort_sources');
   return $sources;
+}
+
+/**
+ * Decide whether an entity_type/bundle pair passes an entity_types filter.
+ *
+ * Matches case-insensitively against either the raw Backdrop entity type
+ * or the bundle/content-type name, since the tool's entity_types param
+ * accepts either form.
+ *
+ * @param string $entity_type
+ *   The raw Backdrop entity type (e.g. "node").
+ * @param string $bundle
+ *   The bundle/content-type name (e.g. "person"), or '' if unknown.
+ * @param array $allowed_entity_types_lower
+ *   Allowed entity_types values, already lowercased.
+ *
+ * @return bool
+ *   TRUE if the pair passes the filter (or no filter is configured).
+ */
+function ai_search_rag_entity_type_allowed($entity_type, $bundle, array $allowed_entity_types_lower) {
+  if (empty($allowed_entity_types_lower)) {
+    return TRUE;
+  }
+  if (in_array(strtolower((string) $entity_type), $allowed_entity_types_lower, TRUE)) {
+    return TRUE;
+  }
+  $bundle = (string) $bundle;
+  return $bundle !== '' && in_array(strtolower($bundle), $allowed_entity_types_lower, TRUE);
 }
 
 /**
