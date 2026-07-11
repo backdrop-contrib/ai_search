@@ -7,7 +7,7 @@ require_once backdrop_get_path('module', 'ai_search') . '/includes/AiSearchBacke
  */
 function ai_search_simple_chatbot_config_info() {
   $prefixes['ai_search_simple_chatbot.settings'] = [
-    'label' => t('Search API AI Simple Chatbot settings'),
+    'label' => t('AI Search Simple Chatbot settings'),
     'group' => t('Configuration'),
   ];
 
@@ -339,8 +339,7 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
   if (!$api_client) {
     // Final fallback to legacy instantiation
     try {
-      $ai_api_key_name = config_get('ai.settings', 'api_key');
-      $ai_api_key = key_get_key_value($ai_api_key_name);
+      $ai_api_key = ai_search_get_configured_api_key();
       if (!empty($ai_api_key) && class_exists('AIApi')) {
         $api_client = new AIApi($ai_api_key);
         $chat_model_to_use = $chat_model;
@@ -834,7 +833,7 @@ function ai_search_simple_chatbot_get_query_vectors($index, $user_query, $chat_c
 function ai_search_simple_chatbot_block_info() {
   return [
     'ai_search_chat_form' => [
-      'info'  => t('Search API AI: Simple Chatbot'),
+      'info'  => t('AI Search: Simple Chatbot'),
       'cache' => BACKDROP_NO_CACHE,
     ],
   ];
@@ -843,8 +842,7 @@ function ai_search_simple_chatbot_block_info() {
 function ai_search_simple_chatbot_block_configure($delta = '') {
   $form = [];
 
-  $ai_config = config('ai.settings');
-  $apiKey = key_get_key_value($ai_config->get('api_key'));
+  $apiKey = ai_search_get_configured_api_key();
   $api = NULL;
   if (!empty($apiKey) && class_exists('AIApi')) {
     $api = new AIApi($apiKey);
@@ -1163,8 +1161,7 @@ function _ai_search_simple_chatbot_get_embedding_models() {
   }
 
   if (empty($grouped) && module_exists('ai')) {
-    $api_key_name = config_get('ai.settings', 'api_key');
-    $api_key = key_get_key_value($api_key_name);
+    $api_key = ai_search_get_configured_api_key();
     if ($api_key) {
       $api = new AIApi($api_key);
       $models = $api->filterModels(['text-embedding-']);

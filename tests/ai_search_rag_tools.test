@@ -35,4 +35,122 @@ class AiSearchRagToolsTestCase extends BackdropWebTestCase {
     $this->assertTrue(is_array($result), 'Empty-query response is an array.');
     $this->assertTrue(!empty($result['error']), 'Empty-query response returns an error.');
   }
+
+  /**
+   * No filter configured means every entity_type/bundle pair passes.
+   */
+  public function testEntityTypeAllowedWithNoFilter() {
+    $this->assertTrue(ai_search_rag_entity_type_allowed('node', '', []), 'No allowed_entity_types means everything passes.');
+    $this->assertTrue(ai_search_rag_entity_type_allowed('node', 'person', []), 'No allowed_entity_types means everything passes, bundle or not.');
+  }
+
+  /**
+   * A bundle-only match must pass when metadata['type'] is missing and the
+   * bundle was instead derived from the loaded entity.
+   */
+  public function testEntityTypeAllowedMatchesBundleOnly() {
+    $this->assertTrue(ai_search_rag_entity_type_allowed('node', 'person', ['person']), 'Bundle-only match passes when entity_type is not in the allowed list.');
+    $this->assertFalse(ai_search_rag_entity_type_allowed('node', '', ['person']), 'No match when bundle is empty and entity_type is not allowed.');
+  }
+
+  /**
+   * A bundle match must also pass when metadata['type'] was present.
+   */
+  public function testEntityTypeAllowedMatchesKnownBundle() {
+    $this->assertTrue(ai_search_rag_entity_type_allowed('node', 'faq', ['faq']), 'Bundle from metadata matches the allowed list.');
+  }
+
+  /**
+   * Matching must be case-insensitive on both entity_type and bundle.
+   */
+  public function testEntityTypeAllowedIsCaseInsensitive() {
+    $this->assertTrue(ai_search_rag_entity_type_allowed('Node', 'Person', ['person']), 'Entity type and bundle casing does not affect matching.');
+    $this->assertTrue(ai_search_rag_entity_type_allowed('NODE', '', ['node']), 'Entity type matching ignores case.');
+  }
+
+  /**
+   * Entity-type-only matches must pass even when the bundle does not match
+   * (or is empty), and bundle-only matches must pass even when the raw
+   * entity type does not match.
+   */
+  public function testEntityTypeAllowedEntityTypeOnlyVsBundleOnly() {
+    $this->assertTrue(ai_search_rag_entity_type_allowed('taxonomy_term', 'tags', ['taxonomy_term']), 'entity_type-only match passes regardless of bundle.');
+    $this->assertTrue(ai_search_rag_entity_type_allowed('node', 'faq', ['faq']), 'Bundle-only match passes regardless of entity_type.');
+    $this->assertFalse(ai_search_rag_entity_type_allowed('node', 'article', ['taxonomy_term']), 'Neither entity_type nor bundle matches the allowed list.');
+  }
+
+  /**
+   * A single matching quirk pattern returns its mode-specific prefix.
+   */
+  public function testResolveEmbeddingPrefixSingleMatch() {
+    $quirks = [
+      'nomic-embed-text' => [
+        'query_prefix' => 'search_query: ',
+        'document_prefix' => 'search_document: ',
+      ],
+    ];
+    $this->assertEqual('search_query: ', ai_search_resolve_embedding_prefix($quirks, 'ollama/nomic-embed-text:latest', 'query'), 'Query mode resolves the query_prefix.');
+    $this->assertEqual('search_document: ', ai_search_resolve_embedding_prefix($quirks, 'ollama/nomic-embed-text:latest', 'document'), 'Document mode resolves the document_prefix.');
+  }
+
+  /**
+   * No matching pattern resolves to NULL (text passed through unchanged).
+   */
+  public function testResolveEmbeddingPrefixNoMatch() {
+    $quirks = ['nomic-embed-text' => ['query_prefix' => 'search_query: ']];
+    $this->assertNull(ai_search_resolve_embedding_prefix($quirks, 'gpt-4', 'query'), 'No pattern matches the model, so no prefix is resolved.');
+  }
+
+  /**
+   * The longest matching pattern must win regardless of hook/array order.
+   */
+  public function testResolveEmbeddingPrefixLongestPatternWins() {
+    $quirks = [
+      'embed' => ['query_prefix' => 'broad: '],
+      'nomic-embed-text' => ['query_prefix' => 'specific: '],
+    ];
+    $this->assertEqual('specific: ', ai_search_resolve_embedding_prefix($quirks, 'ollama/nomic-embed-text:latest', 'query'), 'The longer, more specific pattern wins over a broader one.');
+
+    // Same patterns, reversed insertion order: result must be unchanged.
+    $quirksReversed = [
+      'nomic-embed-text' => ['query_prefix' => 'specific: '],
+      'embed' => ['query_prefix' => 'broad: '],
+    ];
+    $this->assertEqual('specific: ', ai_search_resolve_embedding_prefix($quirksReversed, 'ollama/nomic-embed-text:latest', 'query'), 'Pattern precedence does not depend on array insertion order.');
+  }
+
+  /**
+   * Duplicate hook keys merged by array_merge_recursive() collapse a scalar
+   * prefix into an array; the flattening logic must recover a scalar prefix
+   * (first one found) rather than skipping the quirk entirely.
+   */
+  public function testResolveEmbeddingPrefixFlattensDuplicateKeyCollision() {
+    $quirks = [
+      'nomic-embed-text' => [
+        'query_prefix' => ['first_prefix: ', 'second_prefix: '],
+      ],
+    ];
+    $this->assertEqual('first_prefix: ', ai_search_resolve_embedding_prefix($quirks, 'nomic-embed-text', 'query'), 'The first scalar found in a collided array is used as the prefix.');
+
+    // Nested collisions (array of arrays) must still flatten to a scalar.
+    // The flattening walk is queue-based (shift + append children to the
+    // end), so a sibling scalar ahead of a nested array in the queue is
+    // reached before that nested array's own children.
+    $quirksNested = [
+      'nomic-embed-text' => [
+        'query_prefix' => [['nested_prefix: '], 'sibling_prefix: '],
+      ],
+    ];
+    $this->assertEqual('sibling_prefix: ', ai_search_resolve_embedding_prefix($quirksNested, 'nomic-embed-text', 'query'), 'Nested array collisions are flattened to a scalar via queue order.');
+  }
+
+  /**
+   * The public wrapper must pass text through unchanged when no quirk
+   * pattern matches the model, in both query and document modes.
+   */
+  public function testApplyEmbeddingTaskPrefixPassesThroughOnNoMatch() {
+    $model = 'unit-test-model-with-no-registered-quirk';
+    $this->assertEqual('hello world', ai_search_apply_embedding_task_prefix('hello world', $model, 'query'), 'Query mode text is unchanged when no quirk matches.');
+    $this->assertEqual('hello world', ai_search_apply_embedding_task_prefix('hello world', $model, 'document'), 'Document mode text is unchanged when no quirk matches.');
+  }
 }

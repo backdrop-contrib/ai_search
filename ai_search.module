@@ -259,6 +259,18 @@ function ai_search_get_embedding_dimension() {
 }
 
 /**
+ * Return the API key configured for the legacy AI API fallback.
+ *
+ * Reads the key name from ai.settings and resolves it via the Key module,
+ * returning NULL when no key is configured so callers can consistently
+ * guard against a missing/unset key without repeating the lookup pattern.
+ */
+function ai_search_get_configured_api_key() {
+  $key_name = config_get('ai.settings', 'api_key');
+  return !empty($key_name) ? key_get_key_value($key_name) : NULL;
+}
+
+/**
  * Return non-vector index fields that should be treated as contextual metadata.
  */
 function ai_search_get_contextual_fields(array $index_options) {
@@ -679,6 +691,99 @@ function ai_search_query_backend($server, $index, array $vector, $dimension, $to
 }
 
 /**
+ * Prepend whatever task-specific prefix this embedding model requires.
+ *
+ * Some embedding models (nomic-embed-text is the first known case) are
+ * trained expecting a "search_query: " / "search_document: " style prefix
+ * and document materially worse retrieval quality without it. Rather than
+ * hardcoding that check here, providers declare their own models' quirks via
+ * hook_ai_embedding_model_quirks() (see ai_provider_ollama_ai_embedding_model_quirks());
+ * this function just looks up whichever pattern matches the given model. A
+ * model with no matching quirk entry is returned unchanged -- most models
+ * (OpenAI, Gemini, etc.) don't use this convention at all.
+ *
+ * @param string $text
+ *   The text to embed.
+ * @param string $model
+ *   The model identifier (e.g. "ollama/nomic-embed-text:latest").
+ * @param string $mode
+ *   'document' for indexed content, 'query' for search queries.
+ */
+function ai_search_apply_embedding_task_prefix($text, $model, $mode) {
+  $quirks = module_invoke_all('ai_embedding_model_quirks');
+  $prefix = ai_search_resolve_embedding_prefix($quirks, (string) $model, $mode);
+  return ($prefix !== NULL) ? $prefix . $text : $text;
+}
+
+/**
+ * Resolve the task-specific prefix for a model from a quirks map.
+ *
+ * Extracted from ai_search_apply_embedding_task_prefix() so the pattern
+ * sorting/matching and duplicate-key flattening logic can be unit tested
+ * with a caller-supplied quirks map, without requiring the
+ * hook_ai_embedding_model_quirks() hook system to be bootstrapped.
+ *
+ * @param array $quirks
+ *   Quirks map as returned by module_invoke_all('ai_embedding_model_quirks').
+ * @param string $model
+ *   The model identifier to match patterns against.
+ * @param string $mode
+ *   'document' for indexed content, 'query' for search queries.
+ *
+ * @return string|null
+ *   The resolved prefix, or NULL if no quirk pattern matches.
+ */
+function ai_search_resolve_embedding_prefix(array $quirks, $model, $mode) {
+  // module_invoke_all() merges results keyed by pattern in arbitrary hook
+  // registration order. Sort patterns longest-first so a specific pattern
+  // (e.g. "nomic-embed-text") always wins over a broader one (e.g. "embed")
+  // that happens to also match the model string.
+  uksort($quirks, function ($a, $b) {
+    return mb_strlen((string) $b) - mb_strlen((string) $a);
+  });
+  foreach ($quirks as $pattern => $quirk) {
+    if ($pattern === '' || stripos($model, $pattern) === FALSE) {
+      continue;
+    }
+    $key = ($mode === 'query') ? 'query_prefix' : 'document_prefix';
+    if (empty($quirk[$key])) {
+      continue;
+    }
+
+    $prefix = $quirk[$key];
+    // If array_merge_recursive produced an array for duplicate keys,
+    // normalize by extracting the first scalar value if possible.
+    if (is_array($prefix)) {
+      $found = NULL;
+      $stack = $prefix;
+      while (!empty($stack)) {
+        $val = array_shift($stack);
+        if (is_array($val)) {
+          foreach ($val as $v) {
+            $stack[] = $v;
+          }
+          continue;
+        }
+        if (is_scalar($val)) {
+          $found = (string) $val;
+          break;
+        }
+      }
+      if ($found === NULL) {
+        // No usable scalar prefix found; skip this quirk entry.
+        continue;
+      }
+      $prefix = $found;
+    }
+
+    if (is_scalar($prefix)) {
+      return (string) $prefix;
+    }
+  }
+  return NULL;
+}
+
+/**
  * Convert text to embedding vectors (main conversion function).
  * Uses compatibility helpers to resolve AI API clients when needed.
  */
@@ -726,7 +831,7 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
     ], WATCHDOG_ERROR);
     return [];
   }
-  $chunks = AITextChunker::chunkText($prepared_text, $chunk_size, $chunk_overlap);
+  $chunks = AITextChunker::chunkTextByTokens($prepared_text, $chunk_size, $chunk_overlap);
 
   try {
     $config = ai_search_get_embedding_engine_config($embedding_settings);
@@ -816,6 +921,9 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
     $api_client->recordLog('embedding_start', $model, ['text_len' => strlen($prepared_text)], NULL, TRUE, 0);
   }
 
+  // Prefix is identical for every chunk (same model + document mode); resolve once.
+  $document_prefix = ai_search_apply_embedding_task_prefix('', $model, 'document');
+
   $chunked_vectors = [];
   foreach ($chunks as $i => $chunk) {
     $chunk_clean = AIStringHelper::prepareText($chunk);
@@ -823,14 +931,15 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
       continue;
     }
     try {
+      $chunk_for_embedding = $document_prefix . $chunk_clean;
       if ($engine_instance) {
-        $vector = $engine_instance->generateEmbeddings($chunk_clean);
+        $vector = $engine_instance->generateEmbeddings($chunk_for_embedding);
       }
       else {
         // We resolved the AI API client above; prefer the stripped model name
         $use_model = isset($stripped_model) && !empty($stripped_model) ? $stripped_model : $model;
         // Use the compatibility wrapper to call embeddings in various client shapes
-        $vector = $api_client->embedding($chunk_clean, $use_model);
+        $vector = $api_client->embedding($chunk_for_embedding, $use_model);
       }
 
       if (!is_array($vector) || count($vector) !== (int) $expected_dimension) {
@@ -943,13 +1052,13 @@ function ai_search_form_alter(&$form, &$form_state, $form_id) {
       '#type' => 'textfield',
       '#title' => t('Maximum chunk size (tokens)'),
       '#default_value' => $settings['chunk_size'] ?? 500,
-      '#description' => t('Maximum chunk size allowed when breaking up larger content.'),
+      '#description' => t('Maximum chunk size allowed when breaking up larger content. Tokens are approximated at ~4 characters each; no model-specific tokenizer is used.'),
     ];
     $form['options']['form']['embedding_strategy']['chunk_overlap'] = [
       '#type' => 'textfield',
       '#title' => t('Minimum chunk overlap (tokens)'),
       '#default_value' => $settings['chunk_overlap'] ?? 100,
-      '#description' => t('Number of tokens to overlap between chunks.'),
+      '#description' => t('Number of tokens to overlap between chunks. Tokens are approximated at ~4 characters each.'),
     ];
     // After you create $form['options']['form']['embedding_strategy']...
     $form['options']['form']['embedding_strategy']['how_to'] = [
@@ -1065,8 +1174,7 @@ function ai_search_embedding_engine_config_form_submit($form, &$form_state) {
 
     if (class_exists($engine_class)) {
       try {
-        $api_key_name = config_get('ai.settings', 'api_key');
-        $api_key = key_get_key_value($api_key_name);
+        $api_key = ai_search_get_configured_api_key();
         if (!$api_key) {
           throw new Exception('AI API key is missing.');
         }

@@ -63,7 +63,7 @@ function ai_search_rag_tools() {
                 'items' => [
                   'type' => 'string',
                 ],
-                'description' => 'Optional entity types to filter by, such as node or taxonomy_term.',
+                'description' => 'Optional entity types to filter by. Accepts either the Backdrop entity type (e.g. node, taxonomy_term) or a bundle/content type name (e.g. person, faq).',
               ],
             ],
             'required' => ['query'],
@@ -280,7 +280,7 @@ function ai_search_rag_build_embedding_vector($index, $query) {
   }
 
   try {
-    $vector = $embedding_engine->generateEmbeddings($query);
+    $vector = $embedding_engine->generateEmbeddings(ai_search_apply_embedding_task_prefix($query, $model, 'query'));
   }
   catch (\Exception $e) {
     return [
@@ -322,6 +322,10 @@ function ai_search_rag_extract_sources($server, $index, $vector_results, $score_
   $backend_class = $server->class;
   $matches = ai_search_backend_result_matches($server, $vector_results, $index);
 
+  // Normalize once so LLM-supplied casing/whitespace (e.g. "Person ") still
+  // matches a lowercase bundle/entity type like "person".
+  $allowed_entity_types_lower = array_map('strtolower', array_map('trim', $allowed_entity_types));
+
   $sources = [];
   foreach ($matches as $match) {
     if (!is_array($match)) {
@@ -340,8 +344,24 @@ function ai_search_rag_extract_sources($server, $index, $vector_results, $score_
     $metadata = $resolved['metadata'];
     $entity_type = $resolved['entity_type'];
     $entity_id = $resolved['entity_id'];
-    if (!empty($allowed_entity_types) && !in_array($entity_type, $allowed_entity_types, TRUE)) {
-      continue;
+    if (!empty($allowed_entity_types)) {
+      // The tool's entity_types param is documented as the raw Backdrop
+      // entity type ("node", "taxonomy_term"), but models routinely pass
+      // content/bundle names instead (e.g. "person", "faq") since that's
+      // the more intuitive reading of "type of content." Matching only the
+      // raw entity type meant any bundle-style filter silently zeroed out
+      // every result. Accept either.
+      $bundle = !empty($metadata['type']) ? (string) $metadata['type'] : '';
+      // Some indexes don't store the bundle in metadata; fall back to
+      // deriving it from the already-loaded entity so bundle-style filters
+      // still work in that case.
+      if ($bundle === '' && !empty($resolved['entity'])) {
+        list(, , $loaded_bundle) = entity_extract_ids($entity_type, $resolved['entity']);
+        $bundle = !empty($loaded_bundle) ? (string) $loaded_bundle : '';
+      }
+      if (!ai_search_rag_entity_type_allowed($entity_type, $bundle, $allowed_entity_types_lower)) {
+        continue;
+      }
     }
 
     $entity = $resolved['entity'];
@@ -373,6 +393,34 @@ function ai_search_rag_extract_sources($server, $index, $vector_results, $score_
 
   usort($sources, 'ai_search_rag_sort_sources');
   return $sources;
+}
+
+/**
+ * Decide whether an entity_type/bundle pair passes an entity_types filter.
+ *
+ * Matches case-insensitively against either the raw Backdrop entity type
+ * or the bundle/content-type name, since the tool's entity_types param
+ * accepts either form.
+ *
+ * @param string $entity_type
+ *   The raw Backdrop entity type (e.g. "node").
+ * @param string $bundle
+ *   The bundle/content-type name (e.g. "person"), or '' if unknown.
+ * @param array $allowed_entity_types_lower
+ *   Allowed entity_types values, already lowercased.
+ *
+ * @return bool
+ *   TRUE if the pair passes the filter (or no filter is configured).
+ */
+function ai_search_rag_entity_type_allowed($entity_type, $bundle, array $allowed_entity_types_lower) {
+  if (empty($allowed_entity_types_lower)) {
+    return TRUE;
+  }
+  if (in_array(strtolower((string) $entity_type), $allowed_entity_types_lower, TRUE)) {
+    return TRUE;
+  }
+  $bundle = (string) $bundle;
+  return $bundle !== '' && in_array(strtolower($bundle), $allowed_entity_types_lower, TRUE);
 }
 
 /**

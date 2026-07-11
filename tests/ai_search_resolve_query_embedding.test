@@ -1,0 +1,187 @@
+<?php
+
+/**
+ * @file
+ * Tests for ai_search_resolve_query_embedding().
+ *
+ * Runs without the "search_api" or "ai" modules present, so this file
+ * declares minimal stand-ins for the external symbols
+ * ai_search_resolve_query_embedding() depends on (SearchApiQueryInterface,
+ * ai_get_api_for_model()) when they aren't already loaded.
+ */
+
+if (!interface_exists('SearchApiQueryInterface')) {
+  interface SearchApiQueryInterface {
+  }
+}
+
+if (!function_exists('ai_get_api_for_model')) {
+  function ai_get_api_for_model($model, &$stripped_model) {
+    global $__ai_search_test_api_calls, $__ai_search_test_fake_api, $__ai_search_test_stripped_model;
+    $__ai_search_test_api_calls[] = $model;
+    $stripped_model = $__ai_search_test_stripped_model;
+    return $__ai_search_test_fake_api;
+  }
+}
+
+class AiSearchTestQuery implements SearchApiQueryInterface {
+  private $keys;
+  public function __construct($keys) {
+    $this->keys = $keys;
+  }
+  public function getKeys() {
+    return $this->keys;
+  }
+}
+
+class AiSearchTestFakeApi {
+  public $mode;
+  public $calls = [];
+  public function __construct($mode) {
+    $this->mode = $mode;
+  }
+  public function embedding($text, $model) {
+    if ($this->mode === 'throw') {
+      throw new Exception('boom');
+    }
+    if ($this->mode === 'empty') {
+      return [];
+    }
+    return [0.11, 0.22];
+  }
+  public function recordLog(...$args) {
+    $this->calls[] = $args;
+  }
+}
+
+/**
+ * @file
+ * Tests for ai_search_resolve_query_embedding() in AiSearchBackend.inc.
+ */
+class AiSearchResolveQueryEmbeddingTestCase extends BackdropUnitTestCase {
+
+  /**
+   * Sets up the test environment.
+   */
+  public function setUp() {
+    parent::setUp();
+    require_once backdrop_get_path('module', 'ai_search') . '/ai_search.module';
+    require_once backdrop_get_path('module', 'ai_search') . '/includes/AiSearchBackend.inc';
+
+    global $__ai_search_test_api_calls, $__ai_search_test_fake_api, $__ai_search_test_stripped_model;
+    $__ai_search_test_api_calls = [];
+    $__ai_search_test_fake_api = NULL;
+    $__ai_search_test_stripped_model = NULL;
+  }
+
+  /**
+   * No configured model must short-circuit to NULL without resolving an API.
+   */
+  public function testMissingModelReturnsNull() {
+    $result = ai_search_resolve_query_embedding(new AiSearchTestQuery('hello'), [], 'ai_search_test');
+    $this->assertNull($result, 'NULL is returned when no embeddings_engine/embedding_model is configured.');
+
+    global $__ai_search_test_api_calls;
+    $this->assertEqual(0, count($__ai_search_test_api_calls), 'No API client is resolved when there is no configured model.');
+  }
+
+  /**
+   * Empty search text must short-circuit to NULL without resolving an API.
+   */
+  public function testEmptySearchTextReturnsNull() {
+    $result = ai_search_resolve_query_embedding(new AiSearchTestQuery(['#conjunction' => 'AND']), ['embeddings_engine' => 'fake/model'], 'ai_search_test');
+    $this->assertNull($result, 'NULL is returned when the query keys flatten to empty text.');
+
+    global $__ai_search_test_api_calls;
+    $this->assertEqual(0, count($__ai_search_test_api_calls), 'No API client is resolved when there is no search text.');
+  }
+
+  /**
+   * A failed API resolution must throw, identifying the requested model.
+   */
+  public function testFailedApiResolutionThrows() {
+    global $__ai_search_test_fake_api;
+    $__ai_search_test_fake_api = NULL;
+
+    try {
+      ai_search_resolve_query_embedding(new AiSearchTestQuery('hello'), ['embeddings_engine' => 'fake/model'], 'ai_search_test');
+      $this->fail('Expected an exception when no API client can be resolved.');
+    }
+    catch (\Exception $e) {
+      $this->assertTrue(strpos($e->getMessage(), 'fake/model') !== FALSE, 'Exception message identifies the unresolvable model.');
+    }
+  }
+
+  /**
+   * A successful embedding call returns text/vector/model and logs success
+   * against the resolved (stripped) model id used for the actual request.
+   */
+  public function testSuccessfulEmbeddingReturnsResultAndLogsResolvedModel() {
+    global $__ai_search_test_fake_api, $__ai_search_test_stripped_model;
+    $__ai_search_test_stripped_model = 'model';
+    $api = new AiSearchTestFakeApi('success');
+    $__ai_search_test_fake_api = $api;
+
+    $result = ai_search_resolve_query_embedding(new AiSearchTestQuery('hello world'), ['embeddings_engine' => 'fake/model'], 'ai_search_test');
+
+    $this->assertEqual('hello world', $result['text'], 'Search text is extracted and returned.');
+    $this->assertEqual([0.11, 0.22], $result['vector'], 'Embedding vector is returned.');
+    $this->assertEqual('model', $result['model'], 'The resolved (stripped) model id is returned, not the raw configured value.');
+
+    $this->assertEqual(1, count($api->calls), 'recordLog() is called exactly once on success.');
+    $log_call = $api->calls[0];
+    $this->assertEqual('search_embedding', $log_call[0], 'Log operation name is search_embedding.');
+    $this->assertEqual('model', $log_call[1], 'recordLog() logs the resolved model actually used for embedding(), not the raw configured value.');
+    $this->assertTrue($log_call[4], 'recordLog() reports success on a successful embedding call.');
+    $this->assertTrue(is_numeric($log_call[5]) && $log_call[5] >= 0, 'recordLog() reports a real, non-negative duration.');
+  }
+
+  /**
+   * When embedding() returns an empty vector (no exception thrown), the
+   * helper must throw its own "Failed to retrieve embedding." error and
+   * recordLog() must still capture the failure, with no error message since
+   * nothing was thrown.
+   */
+  public function testEmptyVectorThrowsAndLogsFailure() {
+    global $__ai_search_test_fake_api;
+    $api = new AiSearchTestFakeApi('empty');
+    $__ai_search_test_fake_api = $api;
+
+    try {
+      ai_search_resolve_query_embedding(new AiSearchTestQuery('hello'), ['embeddings_engine' => 'fake/model'], 'ai_search_test');
+      $this->fail('Expected an exception when embedding() returns an empty vector.');
+    }
+    catch (\Exception $e) {
+      $this->assertEqual('Failed to retrieve embedding.', $e->getMessage(), 'The helper throws its own error for an empty vector.');
+    }
+
+    $this->assertEqual(1, count($api->calls), 'recordLog() is called exactly once when the vector comes back empty.');
+    $log_call = $api->calls[0];
+    $this->assertFalse($log_call[4], 'recordLog() reports failure when the vector comes back empty.');
+    $this->assertNull($log_call[6], 'recordLog() has no error message since embedding() did not throw.');
+  }
+
+  /**
+   * When embedding() throws, the exception must propagate and recordLog()
+   * must capture the failure with the real error message.
+   */
+  public function testEmbeddingThrowLogsFailureAndRethrows() {
+    global $__ai_search_test_fake_api;
+    $api = new AiSearchTestFakeApi('throw');
+    $__ai_search_test_fake_api = $api;
+
+    try {
+      ai_search_resolve_query_embedding(new AiSearchTestQuery('hello'), ['embeddings_engine' => 'fake/model'], 'ai_search_test');
+      $this->fail('Expected the embedding() exception to propagate.');
+    }
+    catch (\Exception $e) {
+      $this->assertEqual('boom', $e->getMessage(), 'The original embedding() exception is rethrown unchanged.');
+    }
+
+    $this->assertEqual(1, count($api->calls), 'recordLog() is called exactly once on failure.');
+    $log_call = $api->calls[0];
+    $this->assertFalse($log_call[4], 'recordLog() reports failure when embedding() throws.');
+    $this->assertEqual('boom', $log_call[6], 'recordLog() captures the real error message from the thrown exception.');
+  }
+
+}

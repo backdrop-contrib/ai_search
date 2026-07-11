@@ -1,0 +1,17 @@
+[AITextChunkerTestCase]
+name = AI Search text chunker
+description = Verifies token-to-character sizing and overlap clamping in AITextChunker.
+group = Search API AI
+file = tests/ai_text_chunker.test
+
+[AiSearchFlattenQueryKeysTestCase]
+name = AI Search query key flattening
+description = Verifies recursive flattening and control-key filtering in ai_search_flatten_query_keys().
+group = Search API AI
+file = tests/ai_search_flatten_query_keys.test
+
+[AiSearchResolveQueryEmbeddingTestCase]
+name = AI Search query embedding resolution
+description = Verifies model/API resolution, prefixing, and error/logging behavior in ai_search_resolve_query_embedding().
+group = Search API AI
+file = tests/ai_search_resolve_query_embedding.test

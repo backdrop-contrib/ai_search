@@ -576,6 +576,128 @@ function ai_search_normalize_vectors($entity_type, $entity_id, $expected_dimensi
 }
 
 /**
+ * Recursively flatten a Search API keys structure into a flat term list.
+ *
+ * getKeys() can return nested groups, e.g.
+ *   ['#conjunction' => 'OR', 0 => 'foo', 1 => ['#conjunction' => 'AND', 0 => 'bar']]
+ * Control entries are identified by array KEY (e.g. '#conjunction',
+ * '#negation'), not by value, since a conjunction's value ('AND'/'OR') is a
+ * legitimate string that would otherwise leak into the embedding text.
+ *
+ * @param mixed $keys
+ *   A getKeys() return value: a string, or a (possibly nested) keys array.
+ *
+ * @return string[]
+ *   Flat list of search term strings.
+ */
+function ai_search_flatten_query_keys($keys) {
+  if (is_string($keys)) {
+    return [$keys];
+  }
+  if (!is_array($keys)) {
+    return [];
+  }
+
+  $terms = [];
+  foreach ($keys as $key => $value) {
+    if (is_string($key) && $key[0] === '#') {
+      continue;
+    }
+    if (is_array($value)) {
+      $terms = array_merge($terms, ai_search_flatten_query_keys($value));
+    }
+    elseif (is_string($value)) {
+      $terms[] = $value;
+    }
+  }
+  return $terms;
+}
+
+/**
+ * Resolve a Search API query into a query embedding, for backend search().
+ *
+ * Every vector backend's search() needs to: pick the configured embedding
+ * model, extract search text from the query keys, resolve an AI API client,
+ * apply the query-side embedding task prefix, and request the embedding.
+ * That block was duplicated near-verbatim across all four backends (and one
+ * of them — Pinecone — drifted and forgot the prefix step, causing a
+ * document/query mismatch for asymmetric embedding models). Call this from
+ * each backend's search() instead of re-implementing the block.
+ *
+ * @param SearchApiQueryInterface $query
+ *   The incoming Search API query.
+ * @param array $options
+ *   The backend's $this->options; must contain 'embeddings_engine' or the
+ *   legacy 'embedding_model' key.
+ * @param string $watchdog_channel
+ *   Module name to log under, e.g. 'ai_search_pinecone'.
+ *
+ * @return array|null
+ *   NULL if there's no configured model or no search text (caller should
+ *   return an empty result set in that case). Otherwise:
+ *   [
+ *     'text'  => string   // extracted/trimmed search text
+ *     'vector' => float[] // the query embedding
+ *     'model' => string   // resolved model id actually used for embedding()
+ *   ]
+ *
+ * @throws \Throwable
+ *   If an API client can't be resolved for the model, or the embedding
+ *   request fails/returns empty. Any throwable raised by the underlying
+ *   embedding() call is logged (with its message) and rethrown as-is.
+ */
+function ai_search_resolve_query_embedding(SearchApiQueryInterface $query, array $options, $watchdog_channel) {
+  $model = $options['embeddings_engine'] ?? $options['embedding_model'] ?? NULL;
+  if (empty($model)) {
+    watchdog($watchdog_channel, 'No model configured!', [], WATCHDOG_ERROR);
+    return NULL;
+  }
+
+  $keys = $query->getKeys();
+  $text = trim(implode(' ', ai_search_flatten_query_keys($keys)));
+  if ($text === '') {
+    return NULL;
+  }
+
+  $stripped_model = NULL;
+  $api = ai_get_api_for_model($model, $stripped_model);
+  $model_to_use = !empty($stripped_model) ? $stripped_model : $model;
+
+  if (!$api) {
+    watchdog($watchdog_channel, 'Failed to resolve API client for model: @model', ['@model' => $model], WATCHDOG_ERROR);
+    throw new Exception('Failed to get API client for model: ' . $model);
+  }
+
+  $start_time = microtime(TRUE);
+  $vector = NULL;
+  $error_message = NULL;
+  try {
+    $vector = $api->embedding(ai_search_apply_embedding_task_prefix($text, $model_to_use, 'query'), $model_to_use);
+  }
+  catch (\Throwable $e) {
+    $error_message = $e->getMessage();
+    throw $e;
+  }
+  finally {
+    if (method_exists($api, 'recordLog')) {
+      $duration = microtime(TRUE) - $start_time;
+      $success = !empty($vector);
+      $api->recordLog('search_embedding', $model_to_use, ['text_len' => strlen($text)], $success ? $vector : NULL, $success, $duration, $error_message);
+    }
+  }
+
+  if (empty($vector)) {
+    throw new Exception('Failed to retrieve embedding.');
+  }
+
+  return [
+    'text' => $text,
+    'vector' => $vector,
+    'model' => $model_to_use,
+  ];
+}
+
+/**
  * Adds metadata re-ranking form elements to a backend configuration form.
  *
  * Call from configurationForm() in each backend service class.
