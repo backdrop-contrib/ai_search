@@ -271,6 +271,49 @@ function ai_search_get_configured_api_key() {
 }
 
 /**
+ * Build a privacy-preserving cache key for one query embedding.
+ *
+ * The raw query text is never stored. A site salt plus a normalized hash is
+ * used so repeated searches can reuse the vector without making the query
+ * itself recoverable from the cache key.
+ */
+function ai_search_query_embedding_cache_key($model, $embedding_text, $dimension = NULL) {
+  $normalized_text = preg_replace('/\s+/', ' ', trim((string) $embedding_text));
+  $salt = function_exists('backdrop_get_hash_salt') ? backdrop_get_hash_salt() : '';
+
+  return 'ai_search:qembed:' . hash('sha256', implode('|', [
+    $salt,
+    (string) $model,
+    (string) $dimension,
+    $normalized_text,
+  ]));
+}
+
+/**
+ * Load a cached query embedding vector if available.
+ */
+function ai_search_get_cached_query_embedding($model, $embedding_text, $dimension = NULL) {
+  $cache_key = ai_search_query_embedding_cache_key($model, $embedding_text, $dimension);
+  $cached = cache_get($cache_key);
+  if ($cached && isset($cached->data) && is_array($cached->data)) {
+    return $cached->data;
+  }
+  return NULL;
+}
+
+/**
+ * Cache one query embedding vector.
+ */
+function ai_search_set_cached_query_embedding($model, $embedding_text, array $vector, $dimension = NULL) {
+  if (empty($vector)) {
+    return;
+  }
+
+  $cache_key = ai_search_query_embedding_cache_key($model, $embedding_text, $dimension);
+  cache_set($cache_key, array_values($vector), 'cache', REQUEST_TIME + 86400);
+}
+
+/**
  * Return non-vector index fields that should be treated as contextual metadata.
  */
 function ai_search_get_contextual_fields(array $index_options) {
@@ -836,7 +879,7 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
   try {
     $config = ai_search_get_embedding_engine_config($embedding_settings);
   }
-  catch (\Exception $e) {
+  catch (\Throwable $e) {
     watchdog('ai_search', 'Embedding configuration error for @field: @message', [
       '@field' => $field_name,
       '@message' => $e->getMessage(),
@@ -871,7 +914,7 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
           'embeddings_engine_configuration' => $engine_config,
         ]);
       }
-      catch (\Exception $e) {
+      catch (\Throwable $e) {
         watchdog('ai_search', 'Failed to load embeddings engine for @model: @msg', [
           '@model' => $model,
           '@msg'   => $e->getMessage(),
@@ -959,7 +1002,7 @@ function ai_search_convert_embedding($value, $original_type, $type, array $embed
         'chunk_index' => $i,
       ];
     }
-    catch (\Exception $e) {
+    catch (\Throwable $e) {
       watchdog('ai_search', 'Embedding API error for @field: @message', [
         '@field' => $field_name,
         '@message' => $e->getMessage(),
@@ -1190,7 +1233,7 @@ function ai_search_embedding_engine_config_form_submit($form, &$form_state) {
           $engine_config['dimension'] = $engine_instance->getDimension();
         }
       }
-      catch (\Exception $e) {
+      catch (\Throwable $e) {
         backdrop_set_message(t('Failed to load embedding engine: @message', [
           '@message' => $e->getMessage(),
         ]), 'error');
@@ -1507,7 +1550,7 @@ function ai_search_model_exists($api, $model_id) {
           $models = $maybe->list();
         }
       }
-      catch (\Exception $e) {
+      catch (\Throwable $e) {
         // ignore and continue
       }
     }
@@ -1593,7 +1636,7 @@ function ai_search_model_exists($api, $model_id) {
       }
     }
   }
-  catch (\Exception $e) {
+  catch (\Throwable $e) {
     // Discovery request failed — unknown, not a confirmed miss.
     watchdog('ai_search', 'Model discovery check failed: @m', ['@m' => $e->getMessage()], WATCHDOG_DEBUG);
     return NULL;
@@ -1602,4 +1645,3 @@ function ai_search_model_exists($api, $model_id) {
   // List retrieved and parsed; model was not in it — confirmed absent.
   return FALSE;
 }
-

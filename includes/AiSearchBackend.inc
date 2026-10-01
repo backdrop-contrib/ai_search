@@ -216,7 +216,7 @@ function ai_search_load_embeddings_engine($configuration) {
 
     return new $def['class']($full_config, NULL);
   }
-  catch (\Exception $e) {
+  catch (\Throwable $e) {
     watchdog('ai_search', 'Failed to initialize embedding engine: @message', ['@message' => $e->getMessage()], WATCHDOG_ERROR);
     return NULL;
   }
@@ -248,7 +248,7 @@ function ai_search_get_embedding_engines_options() {
       try {
         $available = call_user_func([$def['class'], 'isAvailableStatic']);
       }
-      catch (\Exception $e) {
+      catch (\Throwable $e) {
         $available = FALSE;
       }
     }
@@ -281,8 +281,12 @@ function ai_search_get_embedding_engines_options() {
     }
   }
 
-  // Sort providers alphabetically
+  // Sort providers alphabetically and sort models naturally within each provider
   ksort($grouped);
+  foreach ($grouped as $provider_label => &$provider_models) {
+    natcasesort($provider_models);
+  }
+  unset($provider_models);
 
   // Return grouped array (Backdrop select supports optgroups)
   $options = $grouped;
@@ -393,7 +397,7 @@ function ai_search_update_embedding_configuration_form($form, &$form_state) {
         }
       }
     }
-  catch (\Exception $e) {
+  catch (\Throwable $e) {
     watchdog('ai_search', 'Failed to detect dimension for @id: @m', ['@id' => $selected, '@m' => $e->getMessage()], WATCHDOG_ERROR);
   }
 
@@ -576,6 +580,102 @@ function ai_search_normalize_vectors($entity_type, $entity_id, $expected_dimensi
 }
 
 /**
+ * Normalize metadata into scalar values accepted by vector providers.
+ *
+ * Search API contextual fields may contain nested arrays or entity objects,
+ * while remote vector stores generally accept only scalar metadata values.
+ *
+ * @param array $metadata
+ *   Metadata collected during indexing.
+ *
+ * @return array
+ *   Provider-safe metadata.
+ */
+function ai_search_prepare_vector_metadata(array $metadata) {
+  $prepared = [];
+  foreach ($metadata as $key => $value) {
+    if ($value === NULL) {
+      continue;
+    }
+
+    if (is_scalar($value)) {
+      $prepared[$key] = $value;
+      continue;
+    }
+
+    if (is_object($value) && method_exists($value, '__toString')) {
+      $prepared[$key] = (string) $value;
+      continue;
+    }
+
+    if (is_array($value)) {
+      $parts = [];
+      $flatten = function ($item) use (&$flatten, &$parts) {
+        if ($item === NULL) {
+          return;
+        }
+        if (is_array($item)) {
+          foreach ($item as $child) {
+            $flatten($child);
+          }
+        }
+        elseif (is_scalar($item)) {
+          $parts[] = (string) $item;
+        }
+        elseif (is_object($item) && method_exists($item, '__toString')) {
+          $parts[] = (string) $item;
+        }
+      };
+      $flatten($value);
+      if ($parts) {
+        $prepared[$key] = implode(', ', $parts);
+      }
+    }
+  }
+  return $prepared;
+}
+
+/**
+ * Normalize Search API item IDs into entity type/id groups.
+ *
+ * Supports raw numeric IDs and canonical IDs such as
+ * "entity:node/123:en" or "taxonomy_term/123".
+ *
+ * @param array $ids
+ *   Item IDs supplied by Search API.
+ * @param string $default_entity_type
+ *   Entity type for raw numeric IDs.
+ *
+ * @return array
+ *   An array keyed by entity type, each containing numeric IDs.
+ */
+function ai_search_normalize_entity_ids(array $ids, $default_entity_type = 'node') {
+  $normalized = [];
+  foreach ($ids as $id) {
+    $entity_type = $default_entity_type;
+    $entity_id = NULL;
+    $value = is_scalar($id) ? (string) $id : '';
+
+    if (ctype_digit($value)) {
+      $entity_id = (int) $value;
+    }
+    elseif (preg_match('/^(?:entity:)?([^\/]+)\/(\d+)(?::[^:]*)?$/', $value, $matches)) {
+      $entity_type = $matches[1];
+      $entity_id = (int) $matches[2];
+    }
+
+    if ($entity_id && preg_match('/^[A-Za-z0-9_]+$/', $entity_type)) {
+      $normalized[$entity_type][] = $entity_id;
+    }
+  }
+
+  foreach ($normalized as $entity_type => $entity_ids) {
+    $normalized[$entity_type] = array_values(array_unique($entity_ids));
+  }
+  return $normalized;
+}
+
+/**
  * Recursively flatten a Search API keys structure into a flat term list.
  *
  * getKeys() can return nested groups, e.g.
@@ -662,6 +762,21 @@ function ai_search_resolve_query_embedding(SearchApiQueryInterface $query, array
   $stripped_model = NULL;
   $api = ai_get_api_for_model($model, $stripped_model);
   $model_to_use = !empty($stripped_model) ? $stripped_model : $model;
+  $embedding_text = ai_search_apply_embedding_task_prefix($text, $model_to_use, 'query');
+
+  if (function_exists('ai_search_get_cached_query_embedding')) {
+    $cached_vector = ai_search_get_cached_query_embedding($model_to_use, $embedding_text, NULL);
+    if (is_array($cached_vector)) {
+      if ($api && method_exists($api, 'recordLog')) {
+        $api->recordLog('search_embedding_cache_hit', $model_to_use, ['text_len' => strlen($text)], $cached_vector, TRUE, 0, NULL);
+      }
+      return [
+        'text' => $text,
+        'vector' => $cached_vector,
+        'model' => $model_to_use,
+      ];
+    }
+  }
 
   if (!$api) {
     watchdog($watchdog_channel, 'Failed to resolve API client for model: @model', ['@model' => $model], WATCHDOG_ERROR);
@@ -672,7 +787,7 @@ function ai_search_resolve_query_embedding(SearchApiQueryInterface $query, array
   $vector = NULL;
   $error_message = NULL;
   try {
-    $vector = $api->embedding(ai_search_apply_embedding_task_prefix($text, $model_to_use, 'query'), $model_to_use);
+    $vector = $api->embedding($embedding_text, $model_to_use);
   }
   catch (\Throwable $e) {
     $error_message = $e->getMessage();
@@ -688,6 +803,10 @@ function ai_search_resolve_query_embedding(SearchApiQueryInterface $query, array
 
   if (empty($vector)) {
     throw new Exception('Failed to retrieve embedding.');
+  }
+
+  if (function_exists('ai_search_set_cached_query_embedding')) {
+    ai_search_set_cached_query_embedding($model_to_use, $embedding_text, $vector, NULL);
   }
 
   return [

@@ -975,7 +975,7 @@ function ai_search_simple_chatbot_block_configure($delta = '') {
       '#type'          => 'select',
       '#title'         => t('Chat model'),
       '#options'       => $models,
-      '#default_value' => !empty($chat_config['chat_model']) ? $chat_config['chat_model'] : '',
+      '#default_value' => !empty($chat_config['chat_model']) ? $chat_config['chat_model'] : (function_exists('ai_default_model') ? ai_default_model($models) : ''),
       '#description'   => t('Legacy RAG model only. Assistant mode uses the selected assistant and backing agents instead.'),
     ];
 

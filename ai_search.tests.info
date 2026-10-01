@@ -15,3 +15,9 @@ name = AI Search query embedding resolution
 description = Verifies model/API resolution, prefixing, and error/logging behavior in ai_search_resolve_query_embedding().
 group = Search API AI
 file = tests/ai_search_resolve_query_embedding.test
+
+[AiSearchVectorHelpersTestCase]
+name = AI Search vector helpers
+description = Verifies provider-safe metadata normalization and entity ID grouping used by vector backends.
+group = Search API AI
+file = tests/ai_search_vector_helpers.test

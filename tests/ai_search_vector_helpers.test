@@ -1,0 +1,36 @@
+<?php
+
+/**
+ * @file
+ * Tests for shared vector-provider normalization helpers.
+ */
+class AiSearchVectorHelpersTestCase extends BackdropUnitTestCase {
+
+  public function setUp() {
+    parent::setUp();
+    require_once backdrop_get_path('module', 'ai_search') . '/includes/AiSearchBackend.inc';
+  }
+
+  public function testMetadataIsProviderSafe() {
+    $metadata = ai_search_prepare_vector_metadata([
+      'tags' => [['one', 'two'], 'three'],
+      'count' => 4,
+      'empty' => NULL,
+    ]);
+
+    $this->assertEqual('one, two, three', $metadata['tags'], 'Nested metadata arrays are flattened into a scalar list.');
+    $this->assertEqual(4, $metadata['count'], 'Scalar metadata is preserved.');
+    $this->assertFalse(isset($metadata['empty']), 'NULL metadata is removed.');
+  }
+
+  public function testEntityIDsSupportCanonicalAndNonNodeIDs() {
+    $ids = ai_search_normalize_entity_ids([
+      '12',
+      'entity:taxonomy_term/7:en',
+      'paragraphs_item/9',
+      '12',
+    ], 'node');
+
+    $this->assertEqual(['node' => [12], 'taxonomy_term' => [7], 'paragraphs_item' => [9]], $ids, 'Raw and canonical IDs are grouped by entity type and deduplicated.');
+  }
+}

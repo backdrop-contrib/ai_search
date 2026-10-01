@@ -82,7 +82,7 @@ function ai_search_search_block_log_edit_form($form, &$form_state, $log) {
   if (!empty($log->expiration)) {
     $expiration_display = format_date($log->expiration, 'long');
     if ($log->expiration < REQUEST_TIME) {
-      $expiration_display = '<span style="color: red;">' . t('Expired: ') . $expiration_display . '</span>';
+      $expiration_display = '<span style="color: var(--gin-color-danger, red);">' . t('Expired: ') . $expiration_display . '</span>';
     }
   }
 
