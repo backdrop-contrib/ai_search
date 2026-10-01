@@ -130,7 +130,6 @@ function ai_search_search_block_log_update_1000() {
  * Implements hook_uninstall().
  */
 function ai_search_search_block_log_uninstall() {
-  // Clean up any configuration
-  config_clear('ai_search_search_block_log.settings');
+  config('ai_search_search_block_log.settings')->delete();
 }
 

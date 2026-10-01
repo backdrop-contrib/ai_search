@@ -11,8 +11,8 @@ conversational search and chatbot experiences.
   results by meaning rather than keyword match.
 - **Multiple embedding providers** — OpenAI, Ollama, and OpenRouter embedding
   models supported out of the box.
-- **Multiple vector backends** — Pinecone, Milvus, and PostgreSQL with
-  pgvector all supported as Search API service backends.
+- **Multiple vector backends** — Milvus/Zilliz, MariaDB 11.7+ Vector, PostgreSQL with
+  pgvector, and Pinecone all supported as Search API service backends.
 - **Hybrid search** — optionally boosts traditional database search results
   with AI similarity scores.
 - **Text chunking** — splits large content into chunks before embedding for
@@ -26,15 +26,16 @@ conversational search and chatbot experiences.
 - [AI module](https://github.com/backdrop-contrib/ai) with at least one
   configured provider
 - [Search API](https://backdropcms.org/project/search_api)
-- At least one vector backend (Pinecone, Milvus, or pgvector)
+- At least one vector backend (`ai_search_milvus`, `ai_search_mariadb`, `ai_search_pgvector`, or `ai_search_pinecone`)
 
 ## Installation
 
 1. Install and enable the AI module and configure an embedding-capable provider.
-2. Install and enable this module and the submodules you need.
-3. Create a Search API index using one of the AI Search vector backends.
-4. Add your content fields to the index using the Embeddings field type.
-5. Index your content.
+2. Install and enable this module and your chosen vector backend module.
+3. Configure your vector backend server in Search API (Admin → Configuration → Search and Metadata → Search API).
+4. Create a Search API index on that server. Ensure your embedding model dimension matches your vector database index dimension.
+5. Add your content fields to the index using the Embeddings field type.
+6. Index your content.
 
 ## Included Submodules
 

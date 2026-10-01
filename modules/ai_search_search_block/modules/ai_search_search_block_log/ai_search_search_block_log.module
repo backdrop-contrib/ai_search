@@ -305,7 +305,7 @@ function ai_search_search_block_log_view_page() {
     $expiration_display = t('Never');
     if (!empty($log->expiration)) {
       if ($log->expiration < REQUEST_TIME) {
-        $expiration_display = '<span style="color: red;">' . t('Expired @date', ['@date' => format_date($log->expiration, 'short')]) . '</span>';
+        $expiration_display = '<span style="color: var(--gin-color-danger, red);">' . t('Expired @date', ['@date' => format_date($log->expiration, 'short')]) . '</span>';
       } else {
         $expiration_display = format_date($log->expiration, 'short');
       }
@@ -356,7 +356,7 @@ function ai_search_search_block_log_view_entry($log) {
   $expiration_display = t('Never');
   if (!empty($log->expiration)) {
     if ($log->expiration < REQUEST_TIME) {
-      $expiration_display = '<span style="color: red; font-weight: bold;">' .
+      $expiration_display = '<span style="color: var(--gin-color-danger, red); font-weight: bold;">' .
         t('Expired on @date', ['@date' => format_date($log->expiration, 'long')]) .
         '</span>';
     } else {

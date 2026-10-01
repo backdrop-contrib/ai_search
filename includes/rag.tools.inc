@@ -246,6 +246,7 @@ function ai_search_rag_search_index($index, $query, array $options = []) {
  */
 function ai_search_rag_build_embedding_vector($index, $query) {
   $model = ai_search_rag_index_embedding_model($index);
+  $resolved_model = $model;
   $dimension = ai_search_rag_index_embedding_dimension($index);
 
   if ($model === '') {
@@ -268,6 +269,7 @@ function ai_search_rag_build_embedding_vector($index, $query) {
       $try_conf['embeddings_engine'] = $provider_id . '/' . $model;
       $embedding_engine = ai_search_load_embeddings_engine($try_conf);
       if ($embedding_engine) {
+        $resolved_model = $provider_id . '/' . $model;
         break;
       }
     }
@@ -279,10 +281,22 @@ function ai_search_rag_build_embedding_vector($index, $query) {
     ];
   }
 
-  try {
-    $vector = $embedding_engine->generateEmbeddings(ai_search_apply_embedding_task_prefix($query, $model, 'query'));
+  $embedding_text = ai_search_apply_embedding_task_prefix($query, $resolved_model, 'query');
+  if (function_exists('ai_search_get_cached_query_embedding')) {
+    $cached_vector = ai_search_get_cached_query_embedding($resolved_model, $embedding_text, $dimension);
+    if (is_array($cached_vector)) {
+      return [
+        'vector' => $cached_vector,
+        'dimension' => $dimension,
+        'model' => $resolved_model,
+      ];
+    }
   }
-  catch (\Exception $e) {
+
+  try {
+    $vector = $embedding_engine->generateEmbeddings($embedding_text);
+  }
+  catch (\Throwable $e) {
     return [
       'error' => $e->getMessage(),
     ];
@@ -294,10 +308,14 @@ function ai_search_rag_build_embedding_vector($index, $query) {
     ];
   }
 
+  if (function_exists('ai_search_set_cached_query_embedding')) {
+    ai_search_set_cached_query_embedding($resolved_model, $embedding_text, $vector, $dimension);
+  }
+
   return [
     'vector' => $vector,
     'dimension' => $dimension,
-    'model' => $model,
+    'model' => $resolved_model,
   ];
 }
 
@@ -308,7 +326,7 @@ function ai_search_rag_query_backend($server, $index, array $vector, $dimension,
   try {
     return ai_search_query_backend($server, $index, $vector, $dimension, $top_k);
   }
-  catch (\Exception $e) {
+  catch (\Throwable $e) {
     return [
       'error' => $e->getMessage(),
     ];

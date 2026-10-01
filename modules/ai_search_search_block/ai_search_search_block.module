@@ -614,7 +614,7 @@ function ai_search_search_block_block_configure($delta = '', $settings = []) {
     '#type' => 'select',
     '#title' => t('LLM Model'),
     '#options' => $models,
-    '#default_value' => !empty($effective['rag_settings']['llm_model']) ? $effective['rag_settings']['llm_model'] : '',
+    '#default_value' => !empty($effective['rag_settings']['llm_model']) ? $effective['rag_settings']['llm_model'] : (function_exists('ai_default_model') ? ai_default_model($models) : ''),
   ];
 
   $form['ai_search_config']['rag_settings']['llm_temp'] = [

@@ -91,13 +91,13 @@ abstract class AiSearchVectorClientBase {
    *
    * @param string $operation
    *   The operation being performed (e.g., 'query', 'upsert').
-   * @param \Exception $e
+   * @param \Throwable $e
    *   The exception to handle.
    *
-   * @throws \Exception
+   * @throws \Throwable
    *   Re-throws the exception after logging it.
    */
-  protected function handleError(string $operation, \Exception $e): void {
+  protected function handleError(string $operation, \Throwable $e): void {
     watchdog('ai_search', "Error during $operation: @message", [
       '@message' => $e->getMessage(),
     ], WATCHDOG_ERROR);
