@@ -51,11 +51,12 @@ abstract class AiSearchEmbeddingsBase {
    * Initialize metadata such as the model name and dimension.
    */
   protected function initializeModelMetadata(array $config) {
-    if (!empty($config['model_name'])) {
-      $this->modelName = (string) $config['model_name'];
-    }
-    elseif (!empty($config['model_id'])) {
+    // model_id is the API identifier; model_name may be a display label.
+    if (!empty($config['model_id'])) {
       $this->modelName = (string) $config['model_id'];
+    }
+    elseif (!empty($config['model_name'])) {
+      $this->modelName = (string) $config['model_name'];
     }
 
     if (isset($config['model_dimension'])) {
