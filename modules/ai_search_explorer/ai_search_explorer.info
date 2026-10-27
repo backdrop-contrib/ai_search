@@ -1,6 +1,7 @@
 name = AI Search Explorer
 description = UI explorer for vector search queries and results.
 backdrop = 1.x
+php = 8.2
 type = module
 package = AI
 dependencies[] = ai_search
