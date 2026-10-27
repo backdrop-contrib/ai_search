@@ -30,10 +30,10 @@ Classes are registered in `ai_search_autoload_info()` — register new `includes
 
 Vector backends live as their own top-level contrib modules, decoupled from `ai_search` core (see git history: "decouple vector backends: remove Milvus/Pinecone specifics from core"):
 
-- `modules/contrib/ai_search_provider_mariadb` (`ai_search_mariadb.module`) – MariaDB native `VECTOR` type (requires MariaDB 11.7+, 11.8 LTS recommended)
-- `modules/contrib/ai_search_provider_milvus` (`ai_search_milvus.module`) – Milvus
-- `modules/contrib/ai_search_provider_pgvector` (`ai_search_pgvector.module`) – PostgreSQL + pgvector
-- `modules/contrib/ai_search_provider_pinecone` (`ai_search_pinecone.module`) – Pinecone
+- `modules/contrib/ai_search_provider_mariadb` (`ai_search_provider_mariadb.module`) – MariaDB native `VECTOR` type (requires MariaDB 11.7+, 11.8 LTS recommended)
+- `modules/contrib/ai_search_provider_milvus` (`ai_search_provider_milvus.module`) – Milvus
+- `modules/contrib/ai_search_provider_pgvector` (`ai_search_provider_pgvector.module`) – PostgreSQL + pgvector
+- `modules/contrib/ai_search_provider_pinecone` (`ai_search_provider_pinecone.module`) – Pinecone
 
 Each depends only on `ai_search` and provides a `includes/*Service.inc` extending `SearchApiAbstractService`, registered via `hook_search_api_service_info()`. Each is also its own separate git repo (`backdrop-contrib/ai_search_provider_*`) with its own `CLAUDE.md` and `README.md` — read those for backend-specific details rather than duplicating them here.
 
