@@ -1,6 +1,7 @@
 name = AI Search Search Block Log
 description = Provides logging for the AI search block.
 backdrop = 1.x
+php = 8.2
 type = module
 package = Search
 dependencies[] = ai_search_search_block

@@ -1,6 +1,7 @@
 name = AI Search
 description = Vector search and embeddings framework for AI-powered content discovery.
 backdrop = 1.x
+php = 8.2
 type = module
 package = AI
 dependencies[] = ai
