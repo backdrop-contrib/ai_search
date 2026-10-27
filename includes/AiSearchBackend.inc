@@ -730,7 +730,7 @@ function ai_search_flatten_query_keys($keys) {
  *   The backend's $this->options; must contain 'embeddings_engine' or the
  *   legacy 'embedding_model' key.
  * @param string $watchdog_channel
- *   Module name to log under, e.g. 'ai_search_pinecone'.
+ *   Module name to log under, e.g. 'ai_search_provider_pinecone'.
  *
  * @return array|null
  *   NULL if there's no configured model or no search text (caller should

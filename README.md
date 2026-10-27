@@ -26,7 +26,7 @@ conversational search and chatbot experiences.
 - [AI module](https://github.com/backdrop-contrib/ai) with at least one
   configured provider
 - [Search API](https://backdropcms.org/project/search_api)
-- At least one vector backend (`ai_search_milvus`, `ai_search_mariadb`, `ai_search_pgvector`, or `ai_search_pinecone`)
+- At least one vector backend (`ai_search_provider_milvus`, `ai_search_provider_mariadb`, `ai_search_provider_pgvector`, or `ai_search_provider_pinecone`)
 
 ## Installation
 
