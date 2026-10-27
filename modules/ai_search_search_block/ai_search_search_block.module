@@ -51,32 +51,6 @@ function ai_search_search_block_stream_string($text, $sleep_us = 50000) {
 }
 
 /**
- * Helper: log prompt metadata without storing prompt text.
- */
-function _ai_sb_log_prompt($query, $prompt, array $ctx = []) {
-  $dir = 'temporary://ai_sb';
-  if (!file_prepare_directory($dir, FILE_CREATE_DIRECTORY | FILE_MODIFY_PERMISSIONS)) {
-    $dir = 'temporary://';
-  }
-  $payload = [
-    'ts' => date('c'),
-    'query_hash' => hash('sha256', (string) $query),
-    'query_len' => strlen((string) $query),
-    'prompt_hash' => hash('sha256', (string) $prompt),
-    'prompt_len' => strlen((string) $prompt),
-    'context_keys' => array_keys($ctx),
-  ];
-  $data = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-  $name = $dir . '/prompt_' . substr(hash('sha256', $query . microtime(TRUE)), 0, 12) . '.json';
-  file_unmanaged_save_data($data, $name, FILE_EXISTS_REPLACE);
-  watchdog('ai_search_search_block', 'Prompt metadata logged to @f (prompt_len=@n).', [
-    '@f' => $name,
-    '@n' => $payload['prompt_len'],
-  ], WATCHDOG_NOTICE);
-  return $name;
-}
-
-/**
  * Implements hook_menu().
  */
 function ai_search_search_block_menu() {
@@ -403,7 +377,7 @@ function ai_search_search_block_db_results_callback() {
 /**
  * Internal: return hardcoded defaults used by both configure + view.
  */
-function _ai_search_block_defaults() {
+function _ai_search_search_block_defaults() {
   return [
     'placeholder' => t('Ask me a question about your subject here!'),
     'submit_text' => t('Ask question'),
@@ -469,7 +443,7 @@ function ai_search_search_block_block_configure($delta = '', $settings = []) {
   // Settings can come from different paths depending on context:
   // - From layout editor: $settings['ai_search_config']
   // - From old saved configs: $settings['block_settings']['ai_search_config']
-  $defaults = _ai_search_block_defaults();
+  $defaults = _ai_search_search_block_defaults();
   $instance = [];
   if (!empty($settings['ai_search_config'])) {
     $instance = $settings['ai_search_config'];
@@ -500,19 +474,19 @@ function ai_search_search_block_block_configure($delta = '', $settings = []) {
 
   // Normalize nested structures (defense against bad saved config).
   if (!is_array($effective['rag_settings'])) {
-    $effective['rag_settings'] = _ai_search_block_defaults()['rag_settings'];
+    $effective['rag_settings'] = _ai_search_search_block_defaults()['rag_settings'];
   }
   if (!is_array($effective['block_settings'])) {
-    $effective['block_settings'] = _ai_search_block_defaults()['block_settings'];
+    $effective['block_settings'] = _ai_search_search_block_defaults()['block_settings'];
   }
   if (!is_array($effective['source_data'])) {
-    $effective['source_data'] = _ai_search_block_defaults()['source_data'];
+    $effective['source_data'] = _ai_search_search_block_defaults()['source_data'];
   }
   if (!is_array($effective['database_results'])) {
-    $effective['database_results'] = _ai_search_block_defaults()['database_results'];
+    $effective['database_results'] = _ai_search_search_block_defaults()['database_results'];
   }
   if (!isset($effective['rag_settings']['aggregated_llm']) || !is_string($effective['rag_settings']['aggregated_llm'])) {
-    $effective['rag_settings']['aggregated_llm'] = _ai_search_block_defaults()['rag_settings']['aggregated_llm'];
+    $effective['rag_settings']['aggregated_llm'] = _ai_search_search_block_defaults()['rag_settings']['aggregated_llm'];
   }
 
   // --- Form UI ---
@@ -760,7 +734,7 @@ function ai_search_search_block_block_view($delta = '', $settings = []) {
   $block = [];
 
   // Merge instance config over defaults.
-  $defaults = _ai_search_block_defaults();
+  $defaults = _ai_search_search_block_defaults();
 
   // Settings can come from different paths depending on context:
   // - From layout editor: $settings['ai_search_config']
@@ -794,19 +768,19 @@ function ai_search_search_block_block_view($delta = '', $settings = []) {
 
   // Normalize nested structures (defense against bad saved config).
   if (!is_array($eff['rag_settings'])) {
-    $eff['rag_settings'] = _ai_search_block_defaults()['rag_settings'];
+    $eff['rag_settings'] = _ai_search_search_block_defaults()['rag_settings'];
   }
   if (!is_array($eff['block_settings'])) {
-    $eff['block_settings'] = _ai_search_block_defaults()['block_settings'];
+    $eff['block_settings'] = _ai_search_search_block_defaults()['block_settings'];
   }
   if (!is_array($eff['source_data'])) {
-    $eff['source_data'] = _ai_search_block_defaults()['source_data'];
+    $eff['source_data'] = _ai_search_search_block_defaults()['source_data'];
   }
   if (!is_array($eff['database_results'])) {
-    $eff['database_results'] = _ai_search_block_defaults()['database_results'];
+    $eff['database_results'] = _ai_search_search_block_defaults()['database_results'];
   }
   if (!isset($eff['rag_settings']['aggregated_llm']) || !is_string($eff['rag_settings']['aggregated_llm'])) {
-    $eff['rag_settings']['aggregated_llm'] = _ai_search_block_defaults()['rag_settings']['aggregated_llm'];
+    $eff['rag_settings']['aggregated_llm'] = _ai_search_search_block_defaults()['rag_settings']['aggregated_llm'];
   }
 
   // Common attachments (Markdown renderer + sanitizer).
