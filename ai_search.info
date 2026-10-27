@@ -5,3 +5,4 @@ php = 8.2
 type = module
 package = AI
 dependencies[] = ai
+dependencies[] = search_api

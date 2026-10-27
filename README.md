@@ -23,6 +23,7 @@ conversational search and chatbot experiences.
 ## Requirements
 
 - Backdrop CMS 1.x
+- PHP 8.2 or later
 - [AI module](https://github.com/backdrop-contrib/ai) with at least one
   configured provider
 - [Search API](https://backdropcms.org/project/search_api)
@@ -49,8 +50,8 @@ Found at **Admin → Configuration → AI → Search API AI Explorer**.
 
 ### **ai_search_simple_chatbot**
 Block-based chatbot with streaming responses and session-based chat history,
-powered by the configured AI search index. (Deprecated in favor of the more flexible and powerful AI Assistants
-module which in part of [AI Agents module](https://www.drupal.org/project/ai_agents))
+powered by the configured AI search index. (Deprecated in favor of the more flexible and powerful
+[AI Assistants](https://github.com/backdrop-contrib/ai_assistants) module.)
 
 ## Issues
 
