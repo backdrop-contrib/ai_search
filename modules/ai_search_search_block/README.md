@@ -1,7 +1,7 @@
-# AI Search Block
+# AI Search Search Block
 
 ## Overview
-AI Search Block provides a block for AI-powered search functionality in Backdrop CMS.
+AI Search Search Block provides a block for AI-powered search functionality in Backdrop CMS.
 This module integrates with the AI and Search API modules to provide enhanced search
 capabilities using artificial intelligence.
 
@@ -25,12 +25,12 @@ Once the AI Search block is placed in a region, users with the "Access AI search
 permission can use it to search your site with AI-enhanced results.
 
 ## Submodules
-### AI Search Block Log
+### AI Search Search Block Log
 This submodule provides logging functionality for AI search queries. It stores search
 queries and responses in the database, allowing site administrators to track usage and
 analyze search patterns.
 
-To enable logging, simply enable the AI Search Block Log module, which will automatically
+To enable logging, simply enable the AI Search Search Block Log module, which will automatically
 begin recording search queries and responses.
 
 ## Port from Drupal
