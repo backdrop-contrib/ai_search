@@ -16,7 +16,13 @@
       var cfg = getCfg();
       if (cfg.render_markdown && window.marked && window.DOMPurify) {
         marked.setOptions({ mangle: false, headerIds: false, breaks: true });
-        return DOMPurify.sanitize(marked.parse(md || ''), { USE_PROFILES: { html: true } });
+        // No media or inline styles: model output must not make the browser
+        // request outside URLs on its own.
+        return DOMPurify.sanitize(marked.parse(md || ''), {
+          USE_PROFILES: { html: true },
+          FORBID_TAGS: ['img', 'picture', 'source', 'video', 'audio', 'track', 'iframe', 'object', 'embed'],
+          FORBID_ATTR: ['style', 'srcset', 'poster', 'background']
+        });
       }
     } catch (e) {}
     return md;

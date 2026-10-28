@@ -786,13 +786,13 @@ function ai_search_search_block_block_view($delta = '', $settings = []) {
   // Common attachments (Markdown renderer + sanitizer).
   $marked = [
     'type'  => 'external',
-    'data'  => 'https://cdn.jsdelivr.net/npm/marked/marked.min.js',
+    'data'  => 'https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js',
     'scope' => 'footer',
     'weight'=> 2,
   ];
   $purify = [
     'type'  => 'external',
-    'data'  => 'https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js',
+    'data'  => 'https://cdn.jsdelivr.net/npm/dompurify@3.4.17/dist/purify.min.js',
     'scope' => 'footer',
     'weight'=> 3,
   ];
@@ -1235,6 +1235,11 @@ ARTICLES (Markdown; multiple results are separated by lines):
     }
 
     $entity = $resolve_entity_from_row($r);
+    if ($entity && function_exists('entity_access') && method_exists($entity, 'entityType') && !entity_access('view', $entity->entityType(), $entity)) {
+      watchdog('ai_search_search_block', 'Rejecting result: no view access.', [], WATCHDOG_DEBUG);
+      $rejected++;
+      continue;
+    }
     if (!$entity) {
       $metadata = $get_metadata($r);
       if (empty($metadata['content'])) {

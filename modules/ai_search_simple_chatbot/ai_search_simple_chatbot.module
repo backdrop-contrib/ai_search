@@ -486,6 +486,9 @@ function ai_search_simple_chatbot_form_submit($form, &$form_state) {
     }
 
     $entity = $resolved['entity'];
+    if (!empty($entity) && function_exists('entity_access') && !entity_access('view', $entity_type, $entity)) {
+      continue;
+    }
     $url_rel = ai_search_match_relative_url($entity_type, $entity, $metadata);
     $url_abs = ai_search_match_absolute_url($entity_type, $entity, $metadata);
     $title_raw = ai_search_match_title($entity_type, $entity, $metadata);
