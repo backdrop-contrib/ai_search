@@ -1235,6 +1235,11 @@ ARTICLES (Markdown; multiple results are separated by lines):
     }
 
     $entity = $resolve_entity_from_row($r);
+    if ($entity && function_exists('entity_access') && method_exists($entity, 'entityType') && !entity_access('view', $entity->entityType(), $entity)) {
+      watchdog('ai_search_search_block', 'Rejecting result: no view access.', [], WATCHDOG_DEBUG);
+      $rejected++;
+      continue;
+    }
     if (!$entity) {
       $metadata = $get_metadata($r);
       if (empty($metadata['content'])) {
