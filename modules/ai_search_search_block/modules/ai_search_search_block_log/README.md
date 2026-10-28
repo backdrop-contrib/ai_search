@@ -1,7 +1,7 @@
-# AI Search Block Log
+# AI Search Search Block Log
 
 ## Overview
-AI Search Block Log provides logging functionality for the AI Search Block module.
+AI Search Search Block Log provides logging functionality for the AI Search Search Block module.
 It records search queries and responses in the database, allowing site administrators
 to track usage and analyze search patterns.
 
@@ -10,7 +10,7 @@ This module requires the following modules:
 - [AI Search Block](https://github.com/backdrop-contrib/ai_search_block)
 
 ## Installation
-1. Enable the AI Search Block Log module through the Modules admin page or using Drush.
+1. Enable the AI Search Search Block Log module through the Modules admin page or using Drush.
 2. The module will automatically begin recording search queries and responses.
 
 ## Features
