@@ -1,57 +1,16 @@
 # AI Search
 
-AI Search integrates vector embeddings and semantic search into Backdrop CMS
-via the Search API framework. It provides a provider-agnostic embedding
-pipeline, multiple vector storage backends, and optional UI modules for
-conversational search and chatbot experiences.
-
-## Features
-
-- **Semantic search** — indexes content as vector embeddings and retrieves
-  results by meaning rather than keyword match.
-- **Multiple embedding providers** — OpenAI, Ollama, and OpenRouter embedding
-  models supported out of the box.
-- **Multiple vector backends** — Milvus/Zilliz, MariaDB 11.7+ Vector, PostgreSQL with
-  pgvector, and Pinecone all supported as Search API service backends.
-- **Hybrid search** — optionally boosts traditional database search results
-  with AI similarity scores.
-- **Text chunking** — splits large content into chunks before embedding for
-  better retrieval accuracy.
-- **Extensible** — add new embedding engines or vector backends by implementing
-  a small set of hooks and base classes.
-
-## Requirements
-
-- Backdrop CMS 1.x
-- PHP 8.2 or later
-- [AI module](https://github.com/backdrop-contrib/ai) with at least one
-  configured provider
-- [Search API](https://backdropcms.org/project/search_api)
-- At least one vector backend (`ai_search_provider_milvus`, `ai_search_provider_mariadb`, `ai_search_provider_pgvector`, or `ai_search_provider_pinecone`)
+Help visitors find relevant content even when their query uses different words from the page. AI Search adds semantic search to Backdrop’s Search API. It can also supply matching content to AI search blocks and assistants.
 
 ## Installation
 
-1. Install and enable the AI module and configure an embedding-capable provider.
-2. Install and enable this module and your chosen vector backend module.
-3. Configure your vector backend server in Search API (Admin → Configuration → Search and Metadata → Search API).
-4. Create a Search API index on that server. Ensure your embedding model dimension matches your vector database index dimension.
-5. Add your content fields to the index using the Embeddings field type.
-6. Index your content.
+Enable AI, Search API, AI Search, and a supported vector backend. Configure an embedding-capable AI provider and use its model when creating the Search API server. [Backdrop module installation guide](https://backdropcms.org/user-guide/modules)
 
-## Included Submodules
+[Setup and troubleshooting](https://github.com/backdrop-contrib/ai_search/wiki)
 
-### **ai_search_search_block**
-A configurable block that provides AI-powered site search. An optional logging
-submodule (`ai_search_search_block_log`) records queries and results.
+## Included modules
 
-### **ai_search_explorer**
-Admin UI for running vector search queries and inspecting results interactively.
-Found at **Admin → Configuration → AI → Search API AI Explorer**.
-
-### **ai_search_simple_chatbot**
-Block-based chatbot with streaming responses and session-based chat history,
-powered by the configured AI search index. (Deprecated in favor of the more flexible and powerful
-[AI Assistants](https://github.com/backdrop-contrib/ai_assistants) module.)
+AI Search Explorer, AI Search Header, AI Search Search Block, AI Search Search Block Log, and AI Search Simple Chatbot ship with AI Search.
 
 ## Issues
 
